@@ -94,7 +94,7 @@ def _label_semantics(
                 positions.setdefault(position.trip_id, []).append((received_at, position))
     for timeline_values in (*timelines.values(), *positions.values()):
         timeline_values.sort(key=lambda item: item[0])
-    candidates = post_passage = retained = revised = position_confirmed = 0
+    candidates = post_passage = retained = revised = position_confirmed = joint_confirmed = 0
     routes: dict[str, Counter[str]] = {}
     sampled_trip_ids: set[str] = set()
     for feature in features:
@@ -131,15 +131,18 @@ def _label_semantics(
         delay_values = {value[2] for value in target_values if value[2] is not None}
         if len(delay_values) > 1:
             revised += 1
-        if any(
+        position_passed = any(
             position.current_stop_sequence is not None
             and position.current_stop_sequence >= feature.target_stop_sequence
             and feature.scheduled_target_arrival
             <= received_at
             <= feature.scheduled_target_arrival + timedelta(minutes=30)
             for received_at, position in positions.get(feature.key.trip_id, [])
-        ):
+        )
+        if position_passed:
             position_confirmed += 1
+        if len(past_values) >= 2 and position_passed:
+            joint_confirmed += 1
     total = len(features)
     return {
         "examples_checked": total,
@@ -150,6 +153,7 @@ def _label_semantics(
         "post_passage_retained_twice": retained,
         "revised_target_predictions": revised,
         "vehicle_position_confirmed": position_confirmed,
+        "retained_and_position_confirmed": joint_confirmed,
         "by_route": {
             route: {
                 **dict(counts),

@@ -203,6 +203,7 @@ def create_label_policy(
     if target_type == "measured_arrival" and (
         int(semantics.get("post_passage_retained_twice", 0)) < 10
         or int(semantics.get("vehicle_position_confirmed", 0)) < 10
+        or int(semantics.get("retained_and_position_confirmed", 0)) < 10
     ):
         raise typer.BadParameter(
             "measured-arrival policy requires 10 retained post-passage and vehicle-confirmed cases"

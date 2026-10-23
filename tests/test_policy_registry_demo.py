@@ -100,6 +100,34 @@ def test_cli_archives_the_exact_audit_behind_a_label_policy(tmp_path) -> None:
     archived = data / "state/label-audits" / f"{policy.audit_sha256}.json"
     assert archived.read_bytes() == audit.read_bytes()
 
+    audit.write_text(
+        json.dumps(
+            {
+                "label_semantics": {
+                    "examples_checked": 100,
+                    "candidate_coverage": 0.8,
+                    "post_passage_retained_twice": 10,
+                    "vehicle_position_confirmed": 10,
+                    "retained_and_position_confirmed": 0,
+                }
+            }
+        )
+    )
+    measured = CliRunner().invoke(
+        app,
+        [
+            "create-label-policy",
+            "--config",
+            str(config),
+            "--target-type",
+            "measured_arrival",
+            "--reviewed-trip-timelines",
+            "10",
+        ],
+    )
+    assert measured.exit_code != 0
+    assert "measured-arrival policy requires" in measured.output
+
 
 def test_synthetic_demo_is_deterministic_and_explicit(tmp_path) -> None:
     data = tmp_path / "data"
