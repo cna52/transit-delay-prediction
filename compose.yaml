@@ -1,0 +1,27 @@
+services:
+  collector:
+    build: .
+    command: ["transit-delay", "collect", "--config", "configs/docker.yaml"]
+    restart: unless-stopped
+    env_file: [.env]
+    volumes:
+      - transit-data:/var/lib/transit-delay
+  worker:
+    build: .
+    command: ["transit-delay", "worker", "--config", "configs/docker.yaml"]
+    restart: unless-stopped
+    env_file: [.env]
+    volumes:
+      - transit-data:/var/lib/transit-delay
+    depends_on: [collector]
+  api:
+    build: .
+    command: ["transit-delay", "serve", "--config", "configs/docker.yaml", "--host", "0.0.0.0"]
+    restart: unless-stopped
+    ports: ["8000:8000"]
+    volumes:
+      # The API reads serving artifacts and appends request/prediction telemetry.
+      - transit-data:/var/lib/transit-delay
+    depends_on: [worker]
+volumes:
+  transit-data:

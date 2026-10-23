@@ -1,0 +1,18 @@
+timezone: America/Vancouver
+selected_routes: ["099", "R4", "R5", "049"]
+trip_updates_interval_seconds: 120
+vehicle_positions_interval_seconds: 600
+daily_request_limit: 900
+target_horizon_min_seconds: 600
+target_horizon_max_seconds: 900
+example_cooldown_seconds: 300
+max_feature_age_seconds: 300
+label_wait_seconds: 1800
+serving_refresh_interval_seconds: 900
+reporting_interval_seconds: 3600
+offline_rebuild_interval_seconds: 86400
+static_refresh_interval_seconds: 86400
+data_mode: live
+static_url: https://gtfs-static.translink.ca/gtfs/google_transit.zip
+trip_updates_url: https://gtfsapi.translink.ca/v3/gtfsrealtime
+vehicle_positions_url: https://gtfsapi.translink.ca/v3/gtfsposition

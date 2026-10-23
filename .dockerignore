@@ -1,0 +1,13 @@
+.env
+.git
+.venv*
+.uv-cache
+artifacts
+data
+reports/generated
+frontend/node_modules
+frontend/dist
+__pycache__
+*.pyc
+.pytest_cache
+.coverage

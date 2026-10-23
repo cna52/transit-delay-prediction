@@ -1,0 +1,4 @@
+data_dir: data/demo
+artifact_dir: artifacts/demo
+report_dir: reports/demo
+data_mode: synthetic

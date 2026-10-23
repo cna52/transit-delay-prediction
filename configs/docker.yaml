@@ -1,0 +1,6 @@
+data_dir: /var/lib/transit-delay
+artifact_dir: /var/lib/transit-delay/artifacts
+report_dir: /var/lib/transit-delay/reports
+frontend_dir: /app/frontend/dist
+log_level: INFO
+data_mode: live
