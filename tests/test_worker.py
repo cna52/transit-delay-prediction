@@ -22,9 +22,7 @@ def test_worker_builds_atomic_snapshot_heartbeat_and_reports(tmp_path) -> None:
     received = datetime(2026, 8, 11, 7, 2, tzinfo=UTC)
     registry = StaticFeedRegistry(data / "processed/static/registry.json")
     registry.register(static, received - timedelta(days=1))
-    ImmutableArchive(data).store(
-        "trip_updates", realtime_payload(), received, received, 200, 5
-    )
+    ImmutableArchive(data).store("trip_updates", realtime_payload(), received, received, 200, 5)
     settings = Settings(
         data_dir=data,
         artifact_dir=tmp_path / "artifacts",
@@ -43,7 +41,8 @@ def test_worker_builds_atomic_snapshot_heartbeat_and_reports(tmp_path) -> None:
     features = read_features(snapshot)
     audit = audit_feeds([(parse_feed(realtime_payload()), received)], features)
     assert audit.label_semantics is not None
-    assert audit.label_semantics["examples_checked"] == 1
+    assert audit.label_semantics["examples_checked"] == 0
+    assert audit.label_semantics["pending_examples"] == 1
     summary = build_portfolio_summary(data, reports)
     assert "Attempts / successes" in summary
     assert "no immutable dataset" in summary

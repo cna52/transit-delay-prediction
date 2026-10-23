@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 from transit_delay.cli import app
 from transit_delay.domain import FeatureRow, TripInstanceKey
 from transit_delay.gtfs.realtime import ParsedFeed, RealtimeStopUpdate, RealtimeTripUpdate
-from transit_delay.monitoring.audit import audit_feeds
+from transit_delay.monitoring.audit import audit_feeds, trip_timeline_samples
 
 
 def test_audit_candidate_must_arrive_within_30_minutes() -> None:
@@ -49,8 +49,20 @@ def test_audit_candidate_must_arrive_within_30_minutes() -> None:
     within = target + timedelta(minutes=29)
     too_late = target + timedelta(minutes=31)
     feed = ParsedFeed(target, None, (trip,), ())
-    assert audit_feeds([(feed, within)], [feature]).label_semantics["candidate_labels"] == 1
+    pending = audit_feeds([(feed, within)], [feature]).label_semantics
+    assert pending["pending_examples"] == 1
+    assert pending["examples_checked"] == 0
+    assert (
+        audit_feeds([(feed, within), (feed, too_late)], [feature]).label_semantics[
+            "candidate_labels"
+        ]
+        == 1
+    )
     assert audit_feeds([(feed, too_late)], [feature]).label_semantics["candidate_labels"] == 0
+    sample = trip_timeline_samples([(feed, within)], [feature])[0]
+    assert sample["trip_update_count"] == 1
+    assert sample["target_history"][0]["within_candidate_window"] is True
+    assert sample["review_status"] == "pending"
 
 
 def test_locked_train_rejects_short_window(tmp_path) -> None:

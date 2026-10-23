@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gzip
 import json
 import os
 import signal
@@ -18,10 +17,9 @@ from transit_delay.datasets.resolver import resolve_archived_labels
 from transit_delay.datasets.store import DatasetStore
 from transit_delay.domain import FeatureRow
 from transit_delay.features.builder import FeatureBuilder
-from transit_delay.gtfs.realtime import parse_feed
 from transit_delay.gtfs.registry import StaticFeedRegistry
 from transit_delay.gtfs.static import archive_static_zip
-from transit_delay.monitoring.audit import audit_feeds
+from transit_delay.monitoring.audit import archived_feeds, audit_feeds
 from transit_delay.monitoring.delayed import join_delayed_labels
 from transit_delay.monitoring.report import collection_report, prediction_report, write_report
 from transit_delay.pipeline import ProcessingStats, process_manifest_with_registry
@@ -66,8 +64,7 @@ def _write_features(path: Path, rows: Sequence[FeatureRow]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")
     temporary.write_text(
-        "\n".join(json.dumps(row.to_dict(), default=str) for row in rows)
-        + ("\n" if rows else "")
+        "\n".join(json.dumps(row.to_dict(), default=str) for row in rows) + ("\n" if rows else "")
     )
     os.replace(temporary, path)
 
@@ -196,26 +193,13 @@ def refresh_reports(settings: Settings) -> dict[str, object]:
         return {"status": "no_manifests"}
     collection = collection_report(manifests, settings.timezone)
     write_report(collection, settings.report_dir / "collection.json")
-    feeds = []
-    for manifest in manifests:
-        for line in manifest.read_text().splitlines():
-            record = json.loads(line)
-            if not record.get("payload_path"):
-                continue
-            try:
-                with gzip.open(record["payload_path"], "rb") as stream:
-                    feeds.append(
-                        (parse_feed(stream.read()), datetime.fromisoformat(record["received_at"]))
-                    )
-            except Exception:
-                continue
     features_path = settings.data_dir / "processed" / "features.jsonl"
     features = []
     if features_path.exists():
         from transit_delay.datasets.resolver import read_features
 
         features = read_features(features_path)
-    audit = audit_feeds(feeds, features)
+    audit = audit_feeds(archived_feeds(manifests), features)
     write_report(audit, settings.report_dir / "feed-audit.json")
     return {"status": "complete", "collection": asdict(collection), "audit": asdict(audit)}
 

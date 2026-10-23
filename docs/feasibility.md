@@ -23,7 +23,10 @@ The slice passes with two service days, at least 100 joined eligible target even
 unique schedule joins, and at least 70% candidate-label coverage within 30 minutes. Those are
 engineering gates, not achieved claims.
 
-Run `transit-delay feed-audit`; then create a label policy only after the gates and manual review
+Run `transit-delay feed-audit` and `transit-delay trip-timelines --config configs/evidence.yaml`.
+The timeline report samples ten distinct trips across available routes and service dates for
+manual review. Candidate coverage includes only examples whose full 30-minute window has elapsed;
+newer examples appear as pending. Create a label policy only after the gates and manual review
 pass. The CLI enforces two usable service days, at least 90% strict Static joins, at least 100
 eligible examples, and 70% candidate coverage. A
 `measured_arrival` policy additionally requires at least ten post-passage target updates retained

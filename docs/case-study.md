@@ -32,6 +32,13 @@ code selects Ridge or LightGBM on validation, compares it with persistence and h
 reports slices, rolling folds, a 90% interval, missing labels, and trip-clustered uncertainty.
 Promotion is conditional on all gates in [the evaluation protocol](evaluation.md).
 
+An initial ten-trip timeline sample was inspected during the first collection hour. All ten had
+target-stop updates and vehicle-position records; none yet had a retained post-passage target
+update in the available snapshots. These trips are too recent for the candidate-label gate: the
+corrected audit marks all 47 feature examples pending until each full 30-minute window closes.
+This is an early diagnostic, not the required two-day review or a coverage result. The detailed
+sample is retained in the ignored `trip-timelines.json` report.
+
 ## Reproduce and inspect
 
 ```bash

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gzip
 import json
 import os
 import subprocess
@@ -14,15 +13,14 @@ from zoneinfo import ZoneInfo
 
 import typer
 
-from transit_delay.config import load_settings
+from transit_delay.config import Settings, load_settings
 from transit_delay.datasets.labels import Labeler
 from transit_delay.datasets.policy import LabelPolicy, TargetType
 from transit_delay.datasets.resolver import read_features, resolve_archived_labels
 from transit_delay.datasets.store import DatasetStore
 from transit_delay.demo import seed_synthetic_demo
-from transit_delay.domain import LabelOutcome
+from transit_delay.domain import FeatureRow, LabelOutcome
 from transit_delay.features.builder import FeatureBuilder
-from transit_delay.gtfs.realtime import parse_feed
 from transit_delay.gtfs.static import StaticCatalog, archive_static_zip
 from transit_delay.ingestion.archive import ImmutableArchive
 from transit_delay.ingestion.client import Endpoint, FeedClient
@@ -39,7 +37,7 @@ from transit_delay.models.evaluation import (
     rolling_origin_splits,
 )
 from transit_delay.models.training import train_lightgbm, train_ridge
-from transit_delay.monitoring.audit import audit_feeds
+from transit_delay.monitoring.audit import archived_feeds, audit_feeds, trip_timeline_samples
 from transit_delay.monitoring.delayed import join_delayed_labels
 from transit_delay.monitoring.evidence import build_portfolio_summary
 from transit_delay.monitoring.report import collection_report, prediction_report, write_report
@@ -274,25 +272,32 @@ def report_collection(config: Path | None = None) -> None:
 def feed_audit(config: Path | None = None) -> None:
     """Report actual optional-field presence and freshness from archived live feeds."""
     settings = load_settings(config)
-    feeds = []
-    for manifest in sorted((settings.data_dir / "raw" / "manifests").glob("*.jsonl")):
-        for line in manifest.read_text().splitlines():
-            record = json.loads(line)
-            if not record.get("payload_path"):
-                continue
-            try:
-                with gzip.open(record["payload_path"], "rb") as stream:
-                    feed = parse_feed(stream.read())
-                feeds.append((feed, datetime.fromisoformat(record["received_at"])))
-            except Exception:
-                continue
-    features_path = settings.data_dir / "processed" / "features.jsonl"
-    if not features_path.exists():
-        features_path = settings.data_dir / "serving" / "latest_features.jsonl"
-    features = read_features(features_path) if features_path.exists() else []
+    feeds = archived_feeds((settings.data_dir / "raw" / "manifests").glob("*.jsonl"))
+    features = _audit_features(settings)
     report = audit_feeds(feeds, features)
     output = settings.report_dir / "feed-audit.json"
     write_report(report, output)
+    typer.echo(str(output))
+
+
+def _audit_features(settings: Settings) -> list[FeatureRow]:
+    features_path = settings.data_dir / "processed" / "features.jsonl"
+    if not features_path.exists():
+        features_path = settings.data_dir / "serving" / "latest_features.jsonl"
+    return read_features(features_path) if features_path.exists() else []
+
+
+@app.command("trip-timelines")
+def trip_timelines(config: Path | None = None, limit: int = 10) -> None:
+    """Retain route/day-balanced timeline samples for manual feed review."""
+    settings = load_settings(config)
+    samples = trip_timeline_samples(
+        archived_feeds((settings.data_dir / "raw" / "manifests").glob("*.jsonl")),
+        _audit_features(settings),
+        limit,
+    )
+    output = settings.report_dir / "trip-timelines.json"
+    write_report({"sample_count": len(samples), "samples": samples}, output)
     typer.echo(str(output))
 
 
