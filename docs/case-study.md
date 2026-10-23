@@ -4,6 +4,7 @@ This is a live evidence log, not a completed model result. The baseline reposito
 `d15cd2f89963689354d1427f54497c1fb8aeb49a`. The new collection window began on
 2026-10-22 in Vancouver and is isolated under `data/evidence-2026-10-22/`; the August sample is
 excluded. Raw feed bytes, the API key, generated reports, and model artifacts are kept out of Git.
+The evaluation gates and four-minute collection configuration are committed at `effbb44`.
 
 ## Current result
 
