@@ -38,20 +38,8 @@ cp .env.example .env
 .venv/bin/pytest
 ```
 
-For the React development UI (Node 20+):
-
-```bash
-# Terminal 1
-.venv/bin/transit-delay serve
-# Terminal 2
-cd frontend
-npm ci
-npm run dev
-```
-
-Open `http://localhost:5173`. Vite proxies API calls to FastAPI on port 8000. A production
-`docker compose up --build` compiles the frontend and serves it from FastAPI at
-`http://localhost:8000`, keeping the project on one origin and in one deployable image.
+The API can be run locally with `.venv/bin/transit-delay serve`; its interactive documentation is
+at `http://localhost:8000/docs`. `docker compose up --build` runs the API, collector, and worker.
 
 Long-running local operation (collector plus the worker that refreshes serving features, reports,
 datasets, and delayed-label joins):
@@ -69,7 +57,7 @@ candidate-label coverage, inspect the audit and create an explicit, checksummed 
 
 ```bash
 .venv/bin/transit-delay feed-audit
-.venv/bin/transit-delay create-label-policy --target-type reported_delay_state
+.venv/bin/transit-delay create-label-policy --target-type reported_delay_state --reviewed-trip-timelines 10
 .venv/bin/transit-delay worker --once
 ```
 
@@ -85,9 +73,7 @@ For an offline portfolio demo that never masquerades as live evidence:
 .venv/bin/transit-delay serve --config configs/replay.yaml
 ```
 
-The rider-first product UI exposes named destinations and stops, automatic downstream forecasts,
-plain-language delay ranges, model evidence, and system health. Its light navy/blue/yellow visual
-language is transit-inspired while remaining independently branded. The underlying API includes
+The API includes
 `/healthz`, `/readyz`, `/v1/model`, `/v1/observations`,
 `/v1/metrics/*`, `/v1/system`, and `POST /v1/predictions`. Interactive API documentation remains
 at `/docs`. Without a promoted model it deliberately serves the persistence baseline and

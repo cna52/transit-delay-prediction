@@ -45,7 +45,7 @@ def test_api_serves_explicit_persistence_fallback(tmp_path) -> None:
     assert metrics["latency_ms"]["p95"] is not None
 
 
-def test_api_exposes_frontend_observation_and_operational_contracts(tmp_path) -> None:
+def test_api_exposes_observation_and_operational_contracts(tmp_path) -> None:
     snapshot = tmp_path / "features.jsonl"
     report_dir = tmp_path / "reports"
     report_dir.mkdir()
@@ -94,19 +94,3 @@ def test_api_exposes_frontend_observation_and_operational_contracts(tmp_path) ->
     assert system["observation_count"] == 1
     assert system["api_status"] == "healthy"
     assert system["data_status"] == "stale"
-
-
-def test_api_serves_built_frontend_when_present(tmp_path) -> None:
-    frontend = tmp_path / "frontend"
-    (frontend / "assets").mkdir(parents=True)
-    (frontend / "index.html").write_text("<!doctype html><title>OnTime</title>")
-    (frontend / "assets" / "app.js").write_text("console.log('ok')")
-    settings = Settings(
-        data_dir=tmp_path,
-        artifact_dir=tmp_path / "artifacts",
-        frontend_dir=frontend,
-    )
-    client = TestClient(create_app(settings, tmp_path / "missing.jsonl"))
-
-    assert "OnTime" in client.get("/").text
-    assert client.get("/assets/app.js").status_code == 200

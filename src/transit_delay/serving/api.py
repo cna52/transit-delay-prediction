@@ -10,8 +10,6 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
 from transit_delay.config import Settings
@@ -268,15 +266,5 @@ def create_app(settings: Settings, snapshot_path: Path | None = None) -> Any:
             "worker": worker,
             "checked_at": datetime.now(UTC),
         }
-
-    index = settings.frontend_dir / "index.html"
-    assets = settings.frontend_dir / "assets"
-    if index.exists():
-        if assets.exists():
-            app.mount("/assets", StaticFiles(directory=assets), name="frontend-assets")
-
-        @app.get("/", include_in_schema=False)
-        def frontend() -> FileResponse:
-            return FileResponse(index)
 
     return app

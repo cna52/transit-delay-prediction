@@ -51,6 +51,6 @@ The catalog's `dataset_versions` table retains every version and its exact Parqu
 ## Pending evidence
 
 The two-day trip timeline review, 28-day collection, locked split dates and MAE comparison,
-seven subsequent days of delayed prediction evaluation, and final UI screenshots are pending.
+seven subsequent days of delayed prediction evaluation, and final report screenshots are pending.
 An unavailable computer or feed extends the collection window; gaps are recorded rather than
 filled. Replay and synthetic material are demo content and never included in live metrics.

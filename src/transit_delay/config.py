@@ -28,7 +28,6 @@ class Settings:
     data_dir: Path = Path("data")
     artifact_dir: Path = Path("artifacts")
     report_dir: Path = Path("reports/generated")
-    frontend_dir: Path = Path("frontend/dist")
     data_mode: str = "live"
     log_level: str = "INFO"
     api_key: str | None = None
@@ -73,7 +72,7 @@ def load_settings(config_path: str | Path | None = None) -> Settings:
         raise ValueError(f"unknown configuration keys: {sorted(unknown)}")
     if "selected_routes" in values:
         values["selected_routes"] = tuple(str(v) for v in values["selected_routes"])
-    for key in ("data_dir", "artifact_dir", "report_dir", "frontend_dir"):
+    for key in ("data_dir", "artifact_dir", "report_dir"):
         if key in values:
             values[key] = Path(values[key])
     settings = Settings(**values)

@@ -17,7 +17,6 @@ Collect and publish:
 Core completion requires a defensible label or honestly renamed proxy, a multi-week versioned
 archive, reproducible point-in-time dataset, locked chronological comparison with both baselines,
 a Docker-served champion or baseline, one week of delayed evaluation, and an offline replay demo.
-The dashboard is optional.
 
 Generate the current evidence summary with `transit-delay evidence-report`. It reports pending
 items instead of inventing values and separates live, replay, and synthetic data modes. Before

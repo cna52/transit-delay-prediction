@@ -20,8 +20,8 @@ TransLink Static + GTFS-Realtime
 ```
 
 The collector, worker, and API run locally through Docker Compose. Training and analytics run on
-the same laptop. The complete API and UI remain demonstrable in explicitly marked replay or
-synthetic mode when live collection is stopped.
+the same laptop. The API remains demonstrable in explicitly marked replay or synthetic mode when
+live collection is stopped.
 
 DuckDB and Zstandard-compressed Parquet form the analytical layer. Dataset builds also retain
 deterministic JSONL as a portable interchange and serving format, while the DuckDB catalog records

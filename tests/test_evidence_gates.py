@@ -66,14 +66,12 @@ def test_locked_train_rejects_short_window(tmp_path) -> None:
     assert "28 complete usable" in result.output
 
 
-def test_git_excludes_secrets_raw_data_and_frontend_build() -> None:
+def test_git_excludes_secrets_and_raw_data() -> None:
     root = Path(__file__).resolve().parents[1]
     paths = [
         ".env",
         "data/evidence-2026-10-22/raw/feed.pb",
         "artifacts/model.pkl",
-        "frontend/node_modules/package/index.js",
-        "frontend/dist/index.html",
     ]
     assert all(
         subprocess.run(["git", "check-ignore", "--quiet", path], cwd=root, check=False).returncode

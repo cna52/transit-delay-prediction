@@ -15,6 +15,3 @@ reports/generated/
 reports/demo/
 *.duckdb
 *.log
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/

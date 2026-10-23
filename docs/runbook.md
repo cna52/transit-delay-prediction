@@ -2,8 +2,8 @@
 
 ## Local operation
 
-Create `.env` from `.env.example`, keep it uncommitted, and start the collector, worker, API, and
-React production build with Docker Compose:
+Create `.env` from `.env.example`, keep it uncommitted, and start the collector, worker, and API
+with Docker Compose:
 
 ```bash
 docker compose up --build
@@ -26,8 +26,9 @@ run the two feeds every four minutes and rebuild reports on the configured sched
 Sleeping or powering off this computer creates real collection gaps and extends the evidence
 window. Do not combine this directory with the August sample.
 
-For a durable offline demo, run `transit-delay seed-demo` and serve `configs/replay.yaml`. The UI
-must say replay/synthetic and those rows must not be included in live reliability or model claims.
+For a durable offline demo, run `transit-delay seed-demo` and serve `configs/replay.yaml`. API
+responses identify replay/synthetic mode; those rows must not be included in live reliability or
+model claims.
 
 ## Incidents
 
