@@ -150,5 +150,38 @@ class DatasetStore:
                     json.dumps(manifest.label_status_counts, sort_keys=True),
                 ],
             )
+            # Views follow the latest immutable Parquet version, with its exact path
+            # recorded in dataset_versions for reproducibility.
+            parquet_path = str(directory / "rows.parquet").replace("'", "''")
+            connection.execute(
+                f"CREATE OR REPLACE VIEW latest_dataset_rows AS "
+                f"SELECT * FROM read_parquet('{parquet_path}')"
+            )
+            connection.execute(
+                """
+                CREATE OR REPLACE VIEW dataset_coverage AS
+                SELECT split_part(key, '|', 2) AS service_date,
+                       route_short_name,
+                       count(*) AS eligible_examples,
+                       count(*) FILTER (WHERE label_status = 'labelled') AS labelled_examples,
+                       round(count(*) FILTER (WHERE label_status = 'labelled')::DOUBLE
+                             / nullif(count(*), 0), 4) AS label_coverage
+                FROM latest_dataset_rows
+                GROUP BY 1, 2
+                """
+            )
+            connection.execute(
+                """
+                CREATE OR REPLACE VIEW dataset_label_quality AS
+                SELECT split_part(key, '|', 2) AS service_date,
+                       route_short_name, coalesce(label_status, 'missing') AS label_status,
+                       count(*) AS examples,
+                       count(*) FILTER (WHERE label_minutes IS NOT NULL) AS numeric_labels,
+                       min(label_available_at) AS first_available_at,
+                       max(label_available_at) AS last_available_at
+                FROM latest_dataset_rows
+                GROUP BY 1, 2, 3
+                """
+            )
         finally:
             connection.close()

@@ -34,6 +34,16 @@ def test_chronological_split_and_metrics() -> None:
     assert result.bias == 0.5
 
 
+def test_split_keeps_midnight_trip_in_its_service_day() -> None:
+    rows = [row(day) for day in range(20)]
+    crossing = dict(row(12))
+    crossing["as_of"] = (datetime.fromisoformat(crossing["as_of"]) + timedelta(days=1)).isoformat()
+    rows.append(crossing)
+    train, validation, test = chronological_split(rows, 3, 3, purge_minutes=0)
+    partitions = [set(train), set(validation), set(test)]
+    assert any({12, 20} <= partition for partition in partitions)
+
+
 def test_promotion_requires_trip_clustered_improvement() -> None:
     rows = [row(day) for day in range(20)]
     actual = [0.0] * len(rows)

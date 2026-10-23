@@ -74,9 +74,11 @@ def test_cli_archives_the_exact_audit_behind_a_label_policy(tmp_path) -> None:
         )
     )
     (reports / "dataset-quality.json").write_text(
-        json.dumps({"strict_join_success_rate": 0.95})
+        json.dumps({"strict_join_success_rate": 0.95, "service_days": 2})
     )
-    (reports / "collection.json").write_text(json.dumps({"usable_service_days": 2}))
+    (reports / "collection.json").write_text(
+        json.dumps({"usable_service_dates": ["2026-08-10", "2026-08-11"]})
+    )
     config = tmp_path / "config.yaml"
     config.write_text(f"data_dir: {data}\nreport_dir: {reports}\n")
 
@@ -88,6 +90,8 @@ def test_cli_archives_the_exact_audit_behind_a_label_policy(tmp_path) -> None:
             str(config),
             "--target-type",
             "reported_delay_state",
+            "--reviewed-trip-timelines",
+            "10",
         ],
     )
 

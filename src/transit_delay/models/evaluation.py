@@ -128,9 +128,7 @@ def promotion_decision(
     candidate_mae = trip_weighted_mae(rows, actual, candidate)
     persistence_mae = trip_weighted_mae(rows, actual, persistence)
     grouped: dict[str, list[float]] = {}
-    for row, truth, estimate, baseline in zip(
-        rows, actual, candidate, persistence, strict=True
-    ):
+    for row, truth, estimate, baseline in zip(rows, actual, candidate, persistence, strict=True):
         grouped.setdefault(str(row["key"]), []).append(
             abs(estimate - truth) - abs(baseline - truth)
         )
@@ -149,9 +147,7 @@ def promotion_decision(
     for route, indexes in route_indexes.items():
         if len(indexes) < minimum_route_examples:
             continue
-        candidate_route = metrics(
-            [actual[i] for i in indexes], [candidate[i] for i in indexes]
-        ).mae
+        candidate_route = metrics([actual[i] for i in indexes], [candidate[i] for i in indexes]).mae
         persistence_route = metrics(
             [actual[i] for i in indexes], [persistence[i] for i in indexes]
         ).mae
@@ -187,16 +183,21 @@ def chronological_split(
     if validation_days < 1 or test_days < 1:
         raise ValueError("validation and test windows must be positive")
     parsed = [datetime.fromisoformat(str(row["as_of"])) for row in rows]
-    days = sorted({value.date() for value in parsed})
+    service_days = [datetime.fromisoformat(str(row["key"]).split("|")[1]).date() for row in rows]
+    days = sorted(set(service_days))
     if len(days) < validation_days + test_days + 1:
         raise ValueError("not enough service days for requested chronological split")
     test_dates = set(days[-test_days:])
     validation_dates = set(days[-(test_days + validation_days) : -test_days])
-    validation_boundary = min(value for value in parsed if value.date() in validation_dates)
-    test_boundary = min(value for value in parsed if value.date() in test_dates)
+    validation_boundary = min(
+        value for value, day in zip(parsed, service_days, strict=True) if day in validation_dates
+    )
+    test_boundary = min(
+        value for value, day in zip(parsed, service_days, strict=True) if day in test_dates
+    )
     groups: dict[str, set[str]] = {}
-    for row, value in zip(rows, parsed, strict=True):
-        groups.setdefault(str(row["key"]), set()).add(value.date().isoformat())
+    for row, day in zip(rows, service_days, strict=True):
+        groups.setdefault(str(row["key"]), set()).add(day.isoformat())
     crossing = {key for key, group_days in groups.items() if len(group_days) > 1}
     # A trip crossing midnight is assigned by its first observation, never split.
     group_assignment: dict[str, str] = {}
@@ -207,7 +208,7 @@ def chronological_split(
             "test" if day in test_dates else "validation" if day in validation_dates else "train"
         )
     output: tuple[list[int], list[int], list[int]] = ([], [], [])
-    for index, (row, value) in enumerate(zip(rows, parsed, strict=True)):
+    for index, (row, value, day) in enumerate(zip(rows, parsed, service_days, strict=True)):
         if any(
             abs((value - boundary).total_seconds()) <= purge_minutes * 60
             for boundary in (validation_boundary, test_boundary)
@@ -217,9 +218,9 @@ def chronological_split(
         if assignment is None:
             assignment = (
                 "test"
-                if value.date() in test_dates
+                if day in test_dates
                 else "validation"
-                if value.date() in validation_dates
+                if day in validation_dates
                 else "train"
             )
         output[{"train": 0, "validation": 1, "test": 2}[assignment]].append(index)
@@ -229,7 +230,7 @@ def chronological_split(
 def rolling_origin_splits(
     rows: list[Mapping[str, object]], minimum_train_days: int = 14, test_days: int = 7
 ) -> Iterable[tuple[list[int], list[int]]]:
-    dates = [datetime.fromisoformat(str(row["as_of"])).date() for row in rows]
+    dates = [datetime.fromisoformat(str(row["key"]).split("|")[1]).date() for row in rows]
     unique = sorted(set(dates))
     for boundary in range(minimum_train_days, len(unique), test_days):
         train_dates = set(unique[:boundary])

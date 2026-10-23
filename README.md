@@ -117,3 +117,4 @@ display must include TransLink's required disclaimer from its API terms.
 - [Evaluation protocol](docs/evaluation.md)
 - [Local operations runbook](docs/runbook.md)
 - [Evidence and completion rubric](docs/evidence.md)
+- [Live case study and pending gates](docs/case-study.md)

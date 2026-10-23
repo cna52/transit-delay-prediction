@@ -3,12 +3,14 @@ from __future__ import annotations
 import gzip
 import json
 import os
+import subprocess
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import asdict
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
+from zoneinfo import ZoneInfo
 
 import typer
 
@@ -166,6 +168,7 @@ def create_label_policy(
     config: Path | None = None,
     target_type: TargetType = "reported_delay_state",
     notes: str = "",
+    reviewed_trip_timelines: int = 0,
 ) -> None:
     """Create a versioned policy bound to the current feed-audit report."""
     settings = load_settings(config)
@@ -184,12 +187,20 @@ def create_label_policy(
     collection = json.loads(collection_path.read_text())
     if float(quality.get("strict_join_success_rate") or 0) < 0.9:
         raise typer.BadParameter("strict Static join success rate must be at least 90%")
-    if int(collection.get("usable_service_days", 0)) < 2:
+    today = datetime.now(UTC).astimezone(ZoneInfo(settings.timezone)).date().isoformat()
+    complete_dates = [
+        day for day in collection.get("usable_service_dates", []) if day < today
+    ]
+    if len(complete_dates) < 2 or int(quality.get("service_days", 0)) < 2:
         raise typer.BadParameter("label audit requires at least two usable service days")
     if int(semantics.get("examples_checked", 0)) < 100:
         raise typer.BadParameter("label audit requires at least 100 eligible examples")
     if float(semantics.get("candidate_coverage", 0)) < 0.7:
         raise typer.BadParameter("candidate-label coverage must be at least 70%")
+    if reviewed_trip_timelines < 10:
+        raise typer.BadParameter(
+            "review at least ten trip timelines before locking the label policy"
+        )
     if target_type == "measured_arrival" and (
         int(semantics.get("post_passage_retained_twice", 0)) < 10
         or int(semantics.get("vehicle_position_confirmed", 0)) < 10
@@ -197,7 +208,9 @@ def create_label_policy(
         raise typer.BadParameter(
             "measured-arrival policy requires 10 retained post-passage and vehicle-confirmed cases"
         )
-    policy = LabelPolicy.from_audit(audit, target_type, notes)
+    policy = LabelPolicy.from_audit(
+        audit, target_type, f"{notes}; reviewed_trip_timelines={reviewed_trip_timelines}"
+    )
     audit_archive = settings.data_dir / "state" / "label-audits" / f"{policy.audit_sha256}.json"
     audit_archive.parent.mkdir(parents=True, exist_ok=True)
     if not audit_archive.exists():
@@ -320,6 +333,31 @@ def train(dataset: Path, config: Path | None = None, strong_model: bool = False)
     """Train and compare a model against chronological baselines."""
     settings = load_settings(config)
     records = [json.loads(line) for line in dataset.read_text().splitlines() if line]
+    collection_path = settings.report_dir / "collection.json"
+    if not collection_path.exists():
+        raise typer.BadParameter("collection report is required before locked evaluation")
+    collection = json.loads(collection_path.read_text())
+    today = datetime.now(UTC).astimezone(ZoneInfo(settings.timezone)).date().isoformat()
+    usable_dates = {day for day in collection.get("usable_service_dates", []) if day < today}
+    records = [row for row in records if str(row["key"]).split("|")[1] in usable_dates]
+    labelled_dates = {
+        str(row["key"]).split("|")[1]
+        for row in records
+        if isinstance(row.get("label"), dict) and row["label"].get("status") == "labelled"
+    }
+    if len(usable_dates & labelled_dates) < 28:
+        raise typer.BadParameter(
+            "locked evaluation requires 28 complete usable dataset service days"
+        )
+    missing_label_rate = (
+        sum(
+            not isinstance(row.get("label"), dict) or row["label"].get("status") != "labelled"
+            for row in records
+        )
+        / len(records)
+        if records
+        else 1.0
+    )
     records = [
         row
         for row in records
@@ -331,6 +369,8 @@ def train(dataset: Path, config: Path | None = None, strong_model: bool = False)
     )
     labels = [float(row["label"]["label_minutes"]) for row in records]
     train_i, validation_i, test_i = chronological_split(rows)
+    if not all((train_i, validation_i, test_i)):
+        raise typer.BadParameter("chronological split has an empty partition")
     training_rows = [rows[index] for index in train_i]
     training_labels = [labels[index] for index in train_i]
     validation_rows = [rows[index] for index in validation_i]
@@ -404,6 +444,15 @@ def train(dataset: Path, config: Path | None = None, strong_model: bool = False)
     )
     q05 = residuals[max(0, int(0.05 * (len(residuals) - 1)))]
     q95 = residuals[min(len(residuals) - 1, int(0.95 * (len(residuals) - 1)))]
+    interval_coverage = sum(
+        prediction + q05 <= truth <= prediction + q95
+        for truth, prediction in zip(test_labels, model_predictions, strict=True)
+    ) / len(test_labels)
+    split_dates = {
+        name: sorted({str(rows[index]["key"]).split("|")[1] for index in indexes})
+        for name, indexes in (("train", train_i), ("validation", validation_i), ("test", test_i))
+    }
+    git_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     manifest_data = json.loads((dataset.parent / "manifest.json").read_text())
     artifact_store = ArtifactStore(settings.artifact_dir)
     manifest = artifact_store.save(
@@ -419,6 +468,10 @@ def train(dataset: Path, config: Path | None = None, strong_model: bool = False)
             },
             "reports": [report.to_dict() for report in reports],
             "rolling_backtests": rolling_reports,
+            "split_dates": split_dates,
+            "git_sha": git_sha,
+            "missing_label_rate": missing_label_rate,
+            "interval_90": {"q05": q05, "q95": q95, "test_coverage": interval_coverage},
             "promotion": asdict(promotion),
         },
         output,

@@ -17,6 +17,15 @@ visible instead of hiding them. Aim for 28 usable service days before the locked
 usable day has successful Trip Update snapshots spanning at least eight distinct local hours.
 Do not put the API key in a URL, log, image layer, or committed file.
 
+The October 2026 evidence run uses `configs/evidence.yaml` and an isolated ignored data directory.
+User LaunchAgents `com.cna52.transit-delay.collector` and `com.cna52.transit-delay.worker`
+run the two feeds every four minutes and rebuild reports on the configured schedule. Check
+`launchctl list | grep com.cna52.transit-delay` and the state files under
+`data/evidence-2026-10-22/state/`. The Docker API mounts that same directory through
+`compose.evidence.yaml`; run `docker compose -f compose.evidence.yaml up --build -d` to restart it.
+Sleeping or powering off this computer creates real collection gaps and extends the evidence
+window. Do not combine this directory with the August sample.
+
 For a durable offline demo, run `transit-delay seed-demo` and serve `configs/replay.yaml`. The UI
 must say replay/synthetic and those rows must not be included in live reliability or model claims.
 

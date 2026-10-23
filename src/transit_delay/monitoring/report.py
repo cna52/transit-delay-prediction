@@ -26,6 +26,7 @@ class CollectionReport:
     service_days: int
     usable_service_days: int
     hourly_coverage: dict[str, int]
+    usable_service_dates: tuple[str, ...]
 
 
 def collection_report(
@@ -57,6 +58,7 @@ def collection_report(
         day = timestamp.date().isoformat()
         hours_by_day.setdefault(day, set()).add(timestamp.hour)
         hourly[f"{timestamp.hour:02d}:00"] += 1
+    usable_dates = tuple(sorted(day for day, hours in hours_by_day.items() if len(hours) >= 8))
     return CollectionReport(
         timestamps[0].date().isoformat(),
         timestamps[-1].date().isoformat(),
@@ -70,14 +72,13 @@ def collection_report(
         dict(Counter(str(record["feed_type"]) for record in records)),
         max(gaps) if gaps else None,
         len(hours_by_day),
-        sum(len(hours) >= 8 for hours in hours_by_day.values()),
+        len(usable_dates),
         dict(sorted(hourly.items())),
+        usable_dates,
     )
 
 
-def prediction_report(
-    prediction_log: Path, request_log: Path | None = None
-) -> dict[str, object]:
+def prediction_report(prediction_log: Path, request_log: Path | None = None) -> dict[str, object]:
     rows = (
         [json.loads(line) for line in prediction_log.read_text().splitlines() if line]
         if prediction_log.exists()

@@ -1,0 +1,8 @@
+services:
+  api:
+    build: .
+    command: ["transit-delay", "serve", "--config", "configs/docker.yaml", "--host", "0.0.0.0"]
+    restart: unless-stopped
+    ports: ["8000:8000"]
+    volumes:
+      - ./data/evidence-2026-10-22:/var/lib/transit-delay

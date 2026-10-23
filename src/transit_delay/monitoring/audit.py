@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from transit_delay.domain import FeatureRow
@@ -101,15 +101,20 @@ def _label_semantics(
         sampled_trip_ids.add(feature.key.trip_id)
         target_values: list[tuple[datetime, datetime | None, int | None]] = []
         for received_at, update in timelines.get(feature.key.trip_id, []):
-            if received_at < feature.scheduled_target_arrival:
+            if not (
+                feature.scheduled_target_arrival
+                <= received_at
+                <= feature.scheduled_target_arrival + timedelta(minutes=30)
+            ):
                 continue
             for stop in update.stops:
                 if stop.stop_sequence == feature.target_stop_sequence or (
                     stop.stop_sequence is None and stop.stop_id == feature.target_stop_id
                 ):
-                    target_values.append(
-                        (received_at, stop.arrival_time, stop.arrival_delay_seconds)
-                    )
+                    if stop.arrival_time is not None or stop.arrival_delay_seconds is not None:
+                        target_values.append(
+                            (received_at, stop.arrival_time, stop.arrival_delay_seconds)
+                        )
                     break
         route_counts = routes.setdefault(feature.route_short_name, Counter())
         route_counts["examples"] += 1
@@ -117,9 +122,7 @@ def _label_semantics(
             continue
         candidates += 1
         route_counts["candidates"] += 1
-        past_values = [
-            value for value in target_values if value[1] and value[1] <= value[0]
-        ]
+        past_values = [value for value in target_values if value[1] and value[1] <= value[0]]
         if past_values:
             post_passage += 1
             route_counts["post_passage"] += 1
@@ -131,7 +134,9 @@ def _label_semantics(
         if any(
             position.current_stop_sequence is not None
             and position.current_stop_sequence >= feature.target_stop_sequence
-            and received_at >= feature.scheduled_target_arrival
+            and feature.scheduled_target_arrival
+            <= received_at
+            <= feature.scheduled_target_arrival + timedelta(minutes=30)
             for received_at, position in positions.get(feature.key.trip_id, [])
         ):
             position_confirmed += 1

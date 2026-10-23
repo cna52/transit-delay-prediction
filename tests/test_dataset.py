@@ -5,6 +5,8 @@ from transit_delay.domain import FeatureRow, LabelOutcome, TripInstanceKey
 
 
 def test_dataset_content_version_is_deterministic(tmp_path) -> None:
+    import duckdb
+
     row = FeatureRow(
         "e1",
         datetime(2026, 8, 10, 18, tzinfo=UTC),
@@ -41,3 +43,11 @@ def test_dataset_content_version_is_deterministic(tmp_path) -> None:
     assert first.service_date_from == "2026-08-10"
     assert first.unique_trip_instances == 1
     assert first.label_status_counts == {"labelled": 1}
+    with duckdb.connect(str(tmp_path / "processed/catalog.duckdb"), read_only=True) as db:
+        assert db.execute(
+            "SELECT service_date, route_short_name, eligible_examples, "
+            "labelled_examples, label_coverage FROM dataset_coverage"
+        ).fetchall() == [("2026-08-10", "099", 1, 1, 1.0)]
+        assert db.execute(
+            "SELECT label_status, examples, numeric_labels FROM dataset_label_quality"
+        ).fetchall() == [("labelled", 1, 1)]
