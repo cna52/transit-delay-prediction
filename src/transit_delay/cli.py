@@ -33,6 +33,7 @@ from transit_delay.models.artifacts import ArtifactStore
 from transit_delay.models.baselines import HistoricalMedianBaseline, PersistenceBaseline
 from transit_delay.models.evaluation import (
     chronological_split,
+    empirical_interval_report,
     evaluate,
     promotion_decision,
     rolling_origin_splits,
@@ -188,9 +189,7 @@ def create_label_policy(
     if float(quality.get("strict_join_success_rate") or 0) < 0.9:
         raise typer.BadParameter("strict Static join success rate must be at least 90%")
     today = datetime.now(UTC).astimezone(ZoneInfo(settings.timezone)).date().isoformat()
-    complete_dates = [
-        day for day in collection.get("usable_service_dates", []) if day < today
-    ]
+    complete_dates = [day for day in collection.get("usable_service_dates", []) if day < today]
     if len(complete_dates) < 2 or int(quality.get("service_days", 0)) < 2:
         raise typer.BadParameter("label audit requires at least two usable service days")
     if int(semantics.get("examples_checked", 0)) < 100:
@@ -438,16 +437,9 @@ def train(dataset: Path, config: Path | None = None, strong_model: bool = False)
         )
     selected_validation_model = candidate_models[selected_index]
     validation_predictions = selected_validation_model.predict(validation_rows)
-    residuals = sorted(
-        truth - prediction
-        for truth, prediction in zip(validation_labels, validation_predictions, strict=True)
+    interval = empirical_interval_report(
+        validation_labels, validation_predictions, test_labels, model_predictions
     )
-    q05 = residuals[max(0, int(0.05 * (len(residuals) - 1)))]
-    q95 = residuals[min(len(residuals) - 1, int(0.95 * (len(residuals) - 1)))]
-    interval_coverage = sum(
-        prediction + q05 <= truth <= prediction + q95
-        for truth, prediction in zip(test_labels, model_predictions, strict=True)
-    ) / len(test_labels)
     split_dates = {
         name: sorted({str(rows[index]["key"]).split("|")[1] for index in indexes})
         for name, indexes in (("train", train_i), ("validation", validation_i), ("test", test_i))
@@ -456,7 +448,7 @@ def train(dataset: Path, config: Path | None = None, strong_model: bool = False)
     manifest_data = json.loads((dataset.parent / "manifest.json").read_text())
     artifact_store = ArtifactStore(settings.artifact_dir)
     manifest = artifact_store.save(
-        model, manifest_data["dataset_version"], {"q05": q05, "q95": q95}
+        model, manifest_data["dataset_version"], {"q05": interval["q05"], "q95": interval["q95"]}
     )
     output = settings.report_dir / "evaluation.json"
     write_report(
@@ -471,7 +463,7 @@ def train(dataset: Path, config: Path | None = None, strong_model: bool = False)
             "split_dates": split_dates,
             "git_sha": git_sha,
             "missing_label_rate": missing_label_rate,
-            "interval_90": {"q05": q05, "q95": q95, "test_coverage": interval_coverage},
+            "interval_90": interval,
             "promotion": asdict(promotion),
         },
         output,

@@ -38,6 +38,34 @@ class PromotionDecision:
     reasons: tuple[str, ...]
 
 
+def empirical_interval_report(
+    validation_actual: Sequence[float],
+    validation_predicted: Sequence[float],
+    test_actual: Sequence[float],
+    test_predicted: Sequence[float],
+) -> dict[str, float]:
+    if (
+        not validation_actual
+        or not test_actual
+        or (
+            len(validation_actual) != len(validation_predicted)
+            or len(test_actual) != len(test_predicted)
+        )
+    ):
+        raise ValueError("interval report requires paired validation and test predictions")
+    residuals = sorted(
+        truth - prediction
+        for truth, prediction in zip(validation_actual, validation_predicted, strict=True)
+    )
+    q05 = residuals[max(0, int(0.05 * (len(residuals) - 1)))]
+    q95 = residuals[min(len(residuals) - 1, int(0.95 * (len(residuals) - 1)))]
+    coverage = sum(
+        prediction + q05 <= truth <= prediction + q95
+        for truth, prediction in zip(test_actual, test_predicted, strict=True)
+    ) / len(test_actual)
+    return {"q05": q05, "q95": q95, "test_coverage": coverage}
+
+
 def metrics(actual: Sequence[float], predicted: Sequence[float]) -> MetricSet:
     if len(actual) != len(predicted) or not actual:
         raise ValueError("metrics require equal, non-empty arrays")

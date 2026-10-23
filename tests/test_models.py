@@ -1,7 +1,12 @@
 from datetime import UTC, datetime, timedelta
 
 from transit_delay.models.baselines import HistoricalMedianBaseline, PersistenceBaseline
-from transit_delay.models.evaluation import chronological_split, metrics, promotion_decision
+from transit_delay.models.evaluation import (
+    chronological_split,
+    empirical_interval_report,
+    metrics,
+    promotion_decision,
+)
 
 
 def row(day, route="099", delay=120):
@@ -49,8 +54,13 @@ def test_promotion_requires_trip_clustered_improvement() -> None:
     actual = [0.0] * len(rows)
     persistence = [2.0] * len(rows)
     candidate = [0.5] * len(rows)
-    decision = promotion_decision(
-        rows, actual, candidate, persistence, bootstrap_samples=200
-    )
+    decision = promotion_decision(rows, actual, candidate, persistence, bootstrap_samples=200)
     assert decision.approved
     assert decision.confidence_interval_95[1] < 0
+
+
+def test_interval_uses_validation_residuals_and_reports_test_coverage() -> None:
+    report = empirical_interval_report(
+        [float(x) for x in range(20)], [0.0] * 20, [1.0, 30.0], [0.0, 0.0]
+    )
+    assert report == {"q05": 0.0, "q95": 18.0, "test_coverage": 0.5}
