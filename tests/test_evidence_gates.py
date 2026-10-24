@@ -6,6 +6,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from transit_delay.cli import app
+from transit_delay.datasets.policy import LabelPolicy
 from transit_delay.domain import FeatureRow, TripInstanceKey
 from transit_delay.gtfs.realtime import ParsedFeed, RealtimeStopUpdate, RealtimeTripUpdate
 from transit_delay.monitoring.audit import audit_feeds, trip_timeline_samples
@@ -76,6 +77,52 @@ def test_locked_train_rejects_short_window(tmp_path) -> None:
     result = CliRunner().invoke(app, ["train", str(dataset), "--config", str(config)])
     assert result.exit_code != 0
     assert "28 complete usable" in result.output
+
+
+def test_locked_train_requires_approved_policy_and_dataset_checksum(tmp_path) -> None:
+    data = tmp_path / "data"
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    dates = [(date(2026, 8, 1) + timedelta(days=index)).isoformat() for index in range(28)]
+    (reports / "collection.json").write_text(json.dumps({"usable_service_dates": dates}))
+    dataset_dir = tmp_path / "dataset"
+    dataset_dir.mkdir()
+    dataset = dataset_dir / "rows.jsonl"
+    dataset.write_text(
+        "\n".join(
+            json.dumps(
+                {"key": f"v|{day}|trip|", "label": {"status": "labelled", "label_minutes": 1.0}}
+            )
+            for day in dates
+        )
+        + "\n"
+    )
+    config = tmp_path / "config.yaml"
+    config.write_text(f"data_dir: {data}\nreport_dir: {reports}\n")
+    command = ["train", str(dataset), "--config", str(config)]
+    missing = CliRunner().invoke(app, command)
+    assert "approved label policy" in missing.output
+
+    audit = data / "state/label-audits/audit.json"
+    audit.parent.mkdir(parents=True)
+    audit.write_text("{}")
+    review = data / "state/label-reviews/review.json"
+    review.parent.mkdir(parents=True)
+    review.write_text("{}")
+    policy = LabelPolicy.from_audit(audit, review_path=review)
+    (audit.parent / f"{policy.audit_sha256}.json").write_bytes(audit.read_bytes())
+    (review.parent / f"{policy.review_sha256}.json").write_bytes(review.read_bytes())
+    policy.write(data / "state/label-policy.json")
+    (dataset_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "label_policy_version": policy.version,
+                "content_sha256": "wrong",
+            }
+        )
+    )
+    corrupt = CliRunner().invoke(app, command)
+    assert "dataset content checksum" in corrupt.output
 
 
 def test_git_excludes_secrets_and_raw_data() -> None:

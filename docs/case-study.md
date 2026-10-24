@@ -48,6 +48,8 @@ curl http://localhost:8000/healthz
 curl http://localhost:8000/readyz
 .venv311/bin/transit-delay collection-report --config configs/evidence.yaml
 .venv311/bin/transit-delay feed-audit --config configs/evidence.yaml
+.venv311/bin/transit-delay trip-timelines --config configs/evidence.yaml
+.venv311/bin/transit-delay feasibility-report --config configs/evidence.yaml
 .venv311/bin/transit-delay evidence-report --config configs/evidence.yaml
 ```
 
@@ -61,3 +63,5 @@ The two-day trip timeline review, 28-day collection, locked split dates and MAE 
 seven subsequent days of delayed prediction evaluation, and final report screenshots are pending.
 An unavailable computer or feed extends the collection window; gaps are recorded rather than
 filled. Replay and synthetic material are demo content and never included in live metrics.
+The serving probe records baseline behavior now; only predictions in the seven-day window after
+the locked evaluation will enter the final online result.

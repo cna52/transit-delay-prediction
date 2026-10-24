@@ -303,6 +303,7 @@ def trip_timeline_samples(
                 ),
                 "target_history": target_history,
                 "review_status": "pending",
+                "review_notes": "",
             }
         )
     return samples

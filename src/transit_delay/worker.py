@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from transit_delay.config import Settings
 from transit_delay.datasets.labels import Labeler
@@ -21,6 +22,7 @@ from transit_delay.gtfs.registry import StaticFeedRegistry
 from transit_delay.gtfs.static import archive_static_zip
 from transit_delay.monitoring.audit import archived_feeds, audit_feeds
 from transit_delay.monitoring.delayed import join_delayed_labels
+from transit_delay.monitoring.feasibility import feasibility_gates
 from transit_delay.monitoring.report import collection_report, prediction_report, write_report
 from transit_delay.pipeline import ProcessingStats, process_manifest_with_registry
 from transit_delay.runtime import write_state
@@ -100,6 +102,7 @@ def build_labels_and_dataset(settings: Settings, features_path: Path) -> dict[st
     if not policy_path.exists():
         return {"status": "label_policy_pending"}
     policy = LabelPolicy.load(policy_path)
+    policy.verify_archives(settings.data_dir)
     rows = read_features(features_path)
     manifests = _manifests(settings)
     outcomes = resolve_archived_labels(
@@ -201,6 +204,14 @@ def refresh_reports(settings: Settings) -> dict[str, object]:
         features = read_features(features_path)
     audit = audit_feeds(archived_feeds(manifests), features)
     write_report(audit, settings.report_dir / "feed-audit.json")
+    quality_path = settings.report_dir / "dataset-quality.json"
+    if quality_path.exists():
+        quality = json.loads(quality_path.read_text())
+        today = datetime.now(UTC).astimezone(ZoneInfo(settings.timezone)).date()
+        write_report(
+            feasibility_gates(asdict(collection), quality, asdict(audit), today),
+            settings.report_dir / "feasibility.json",
+        )
     return {"status": "complete", "collection": asdict(collection), "audit": asdict(audit)}
 
 

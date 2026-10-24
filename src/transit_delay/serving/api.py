@@ -47,9 +47,7 @@ def _observation(row: dict[str, object], data_mode: str = "live") -> dict[str, o
     if observed_at.tzinfo is None:
         observed_at = observed_at.replace(tzinfo=UTC)
     wall_age_seconds = (
-        max(0, int((datetime.now(UTC) - observed_at).total_seconds()))
-        if data_mode == "live"
-        else 0
+        max(0, int((datetime.now(UTC) - observed_at).total_seconds())) if data_mode == "live" else 0
     )
     freshness_seconds = max(int(str(row.get("source_age_seconds", 0))), wall_age_seconds)
     return {
@@ -177,6 +175,7 @@ def create_app(settings: Settings, snapshot_path: Path | None = None) -> Any:
         result = predictor.predict(row, now=reference_now)
         response = {
             "prediction_id": uuid4().hex,
+            "predicted_at": datetime.now(UTC).isoformat(),
             "example_id": row["example_id"],
             "trip_instance": row["key"],
             "target_stop_id": row["target_stop_id"],
@@ -210,9 +209,7 @@ def create_app(settings: Settings, snapshot_path: Path | None = None) -> Any:
     def prediction_metrics() -> dict[str, object]:
         labelled = settings.data_dir / "monitoring" / "labelled_predictions.jsonl"
         source = labelled if labelled.exists() else settings.data_dir / "logs" / "predictions.jsonl"
-        report = prediction_report(
-            source, settings.data_dir / "logs" / "api_requests.jsonl"
-        )
+        report = prediction_report(source, settings.data_dir / "logs" / "api_requests.jsonl")
         return {"status": "available" if report["requests"] else "pending", **report}
 
     @app.get("/v1/system")

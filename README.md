@@ -57,7 +57,10 @@ candidate-label coverage, inspect the audit and create an explicit, checksummed 
 
 ```bash
 .venv/bin/transit-delay feed-audit
-.venv/bin/transit-delay create-label-policy --target-type reported_delay_state --reviewed-trip-timelines 10
+.venv/bin/transit-delay trip-timelines
+# Copy trip-timelines.json to trip-timelines-reviewed.json; review ten distinct
+# trips from two service days, setting review_status and review_notes for each.
+.venv/bin/transit-delay create-label-policy --target-type reported_delay_state
 .venv/bin/transit-delay worker --once
 ```
 

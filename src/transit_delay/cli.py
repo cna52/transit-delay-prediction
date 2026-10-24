@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import subprocess
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import cast
 from zoneinfo import ZoneInfo
@@ -40,9 +42,15 @@ from transit_delay.models.training import train_lightgbm, train_ridge
 from transit_delay.monitoring.audit import archived_feeds, audit_feeds, trip_timeline_samples
 from transit_delay.monitoring.delayed import join_delayed_labels
 from transit_delay.monitoring.evidence import build_portfolio_summary
+from transit_delay.monitoring.feasibility import feasibility_gates
+from transit_delay.monitoring.probe import probe_once
 from transit_delay.monitoring.report import collection_report, prediction_report, write_report
-from transit_delay.pipeline import SnapshotProcessor, process_manifest
-from transit_delay.worker import Worker, registry_for
+from transit_delay.pipeline import (
+    SnapshotProcessor,
+    process_manifest,
+    process_manifest_with_registry,
+)
+from transit_delay.worker import Worker, bootstrap_registry, registry_for
 
 app = typer.Typer(no_args_is_help=True, help="TransLink delay prediction operations")
 
@@ -135,6 +143,7 @@ def build_labels(
     if not policy_path.exists():
         raise typer.BadParameter("create a label policy with create-label-policy first")
     label_policy = LabelPolicy.load(policy_path)
+    label_policy.verify_archives(settings.data_dir)
     rows = read_features(features)
     manifests = list((settings.data_dir / "raw" / "manifests").glob("*.jsonl"))
     outcomes = resolve_archived_labels(
@@ -167,13 +176,22 @@ def create_label_policy(
     config: Path | None = None,
     target_type: TargetType = "reported_delay_state",
     notes: str = "",
-    reviewed_trip_timelines: int = 0,
+    review: Path | None = None,
 ) -> None:
     """Create a versioned policy bound to the current feed-audit report."""
     settings = load_settings(config)
-    audit = settings.report_dir / "feed-audit.json"
+    review_path = review or settings.report_dir / "trip-timelines-reviewed.json"
+    if not review_path.exists():
+        raise typer.BadParameter(
+            "retain ten reviewed trip timelines in trip-timelines-reviewed.json"
+        )
+    review_value = json.loads(review_path.read_text())
+    review_digest = str(review_value.get("audit_sha256", ""))
+    if not re.fullmatch(r"[0-9a-f]{64}", review_digest):
+        raise typer.BadParameter("timeline review requires a valid audit checksum")
+    audit = settings.report_dir / "label-audits" / f"{review_digest}.json"
     if not audit.exists():
-        raise typer.BadParameter("run feed-audit before creating a label policy")
+        raise typer.BadParameter("run feed-audit and trip-timelines before creating a label policy")
     audit_value = json.loads(audit.read_text())
     semantics = audit_value.get("label_semantics") or {}
     quality_path = settings.report_dir / "dataset-quality.json"
@@ -194,10 +212,21 @@ def create_label_policy(
         raise typer.BadParameter("label audit requires at least 100 eligible examples")
     if float(semantics.get("candidate_coverage", 0)) < 0.7:
         raise typer.BadParameter("candidate-label coverage must be at least 70%")
-    if reviewed_trip_timelines < 10:
-        raise typer.BadParameter(
-            "review at least ten trip timelines before locking the label policy"
-        )
+    if review_value.get("audit_sha256") != hashlib.sha256(audit.read_bytes()).hexdigest():
+        raise typer.BadParameter("timeline review must match the exact feed audit")
+    reviewed = [
+        sample
+        for sample in review_value.get("samples", [])
+        if sample.get("review_status") == "reviewed"
+        and str(sample.get("review_notes", "")).strip()
+        and str(sample.get("route")) in settings.selected_routes
+        and len(str(sample.get("trip_key", "")).split("|")) == 4
+        and str(sample["trip_key"]).split("|")[1] in complete_dates
+    ]
+    if len({sample.get("trip_key") for sample in reviewed}) < 10:
+        raise typer.BadParameter("review at least ten distinct trip timelines with notes")
+    if len({str(sample["trip_key"]).split("|")[1] for sample in reviewed}) < 2:
+        raise typer.BadParameter("review trip timelines from two service days")
     if target_type == "measured_arrival" and (
         int(semantics.get("post_passage_retained_twice", 0)) < 10
         or int(semantics.get("vehicle_position_confirmed", 0)) < 10
@@ -206,19 +235,27 @@ def create_label_policy(
         raise typer.BadParameter(
             "measured-arrival policy requires 10 retained post-passage and vehicle-confirmed cases"
         )
-    policy = LabelPolicy.from_audit(
-        audit, target_type, f"{notes}; reviewed_trip_timelines={reviewed_trip_timelines}"
-    )
+    policy = LabelPolicy.from_audit(audit, target_type, notes, review_path)
     audit_archive = settings.data_dir / "state" / "label-audits" / f"{policy.audit_sha256}.json"
     audit_archive.parent.mkdir(parents=True, exist_ok=True)
     if not audit_archive.exists():
         audit_archive.write_bytes(audit.read_bytes())
     policy.verify_audit(audit_archive)
+    review_archive = settings.data_dir / "state" / "label-reviews" / f"{policy.review_sha256}.json"
+    review_archive.parent.mkdir(parents=True, exist_ok=True)
+    if not review_archive.exists():
+        review_archive.write_bytes(review_path.read_bytes())
+    policy.verify_review(review_archive)
     output = settings.data_dir / "state" / "label-policy.json"
     policy.write(output)
     typer.echo(
         json.dumps(
-            {"policy": str(output), "audit_artifact": str(audit_archive), **asdict(policy)},
+            {
+                "policy": str(output),
+                "audit_artifact": str(audit_archive),
+                "review_artifact": str(review_archive),
+                **asdict(policy),
+            },
             indent=2,
         )
     )
@@ -251,7 +288,11 @@ def build_dataset(features: Path, labels: Path, config: Path | None = None) -> N
             if value.get("payload_sha256")
         )
     policy_path = settings.data_dir / "state" / "label-policy.json"
-    policy_version = LabelPolicy.load(policy_path).version if policy_path.exists() else "missing"
+    if not policy_path.exists():
+        raise typer.BadParameter("create a checksummed label policy before building a dataset")
+    label_policy = LabelPolicy.load(policy_path)
+    label_policy.verify_archives(settings.data_dir)
+    policy_version = label_policy.version
     result = DatasetStore(settings.data_dir).write(
         feature_rows, label_rows, source_hashes, policy_version
     )
@@ -291,13 +332,85 @@ def _audit_features(settings: Settings) -> list[FeatureRow]:
 def trip_timelines(config: Path | None = None, limit: int = 10) -> None:
     """Retain route/day-balanced timeline samples for manual feed review."""
     settings = load_settings(config)
+    audit_path = settings.report_dir / "feed-audit.json"
+    if not audit_path.exists():
+        raise typer.BadParameter("run feed-audit before sampling trip timelines")
+    digest = hashlib.sha256(audit_path.read_bytes()).hexdigest()
+    frozen = settings.report_dir / "label-audits" / f"{digest}.json"
+    frozen.parent.mkdir(parents=True, exist_ok=True)
+    if not frozen.exists():
+        frozen.write_bytes(audit_path.read_bytes())
     samples = trip_timeline_samples(
         archived_feeds((settings.data_dir / "raw" / "manifests").glob("*.jsonl")),
         _audit_features(settings),
         limit,
     )
     output = settings.report_dir / "trip-timelines.json"
-    write_report({"sample_count": len(samples), "samples": samples}, output)
+    write_report({"audit_sha256": digest, "sample_count": len(samples), "samples": samples}, output)
+    typer.echo(str(output))
+
+
+@app.command("feasibility-report")
+def feasibility_report(config: Path | None = None) -> None:
+    """Evaluate two-day gates and identify route scopes worth replaying."""
+    settings = load_settings(config)
+    required = {
+        name: settings.report_dir / f"{name}.json"
+        for name in ("collection", "dataset-quality", "feed-audit")
+    }
+    if any(not path.exists() for path in required.values()):
+        raise typer.BadParameter("collection, dataset-quality, and feed-audit reports are required")
+    reports = {name: json.loads(path.read_text()) for name, path in required.items()}
+    today = datetime.now(UTC).astimezone(ZoneInfo(settings.timezone)).date()
+    result = feasibility_gates(
+        reports["collection"], reports["dataset-quality"], reports["feed-audit"], today
+    )
+    output = settings.report_dir / "feasibility.json"
+    write_report(result, output)
+    typer.echo(str(output))
+
+
+@app.command("route-scope-report")
+def route_scope_report(routes: str, config: Path | None = None) -> None:
+    """Replay selected routes into an isolated feasibility report."""
+    settings = load_settings(config)
+    selected = tuple(sorted({route.strip() for route in routes.split(",") if route.strip()}))
+    if not selected or not set(selected) <= set(settings.selected_routes):
+        raise typer.BadParameter("routes must be a nonempty subset of selected_routes")
+    manifests = sorted((settings.data_dir / "raw" / "manifests").glob("*.jsonl"))
+    if not manifests:
+        raise typer.BadParameter("no live manifests exist for route replay")
+    rows, stats = process_manifest_with_registry(
+        manifests,
+        bootstrap_registry(settings),
+        set(selected),
+        FeatureBuilder(
+            settings.target_horizon_min_seconds,
+            settings.target_horizon_max_seconds,
+            settings.example_cooldown_seconds,
+            settings.timezone,
+        ),
+    )
+    total_joins = stats.joined + stats.join_failures
+    quality: dict[str, object] = {
+        "strict_join_success_rate": stats.joined / total_joins if total_joins else None,
+        "service_days": len({row.key.service_date for row in rows}),
+    }
+    audit = asdict(audit_feeds(archived_feeds(manifests), rows))
+    collection = asdict(collection_report(manifests, settings.timezone))
+    today = datetime.now(UTC).astimezone(ZoneInfo(settings.timezone)).date()
+    decision = feasibility_gates(collection, quality, audit, today)
+    output = settings.report_dir / "route-scopes" / f"{'-'.join(selected)}.json"
+    write_report(
+        {
+            "routes": selected,
+            "processing": asdict(stats),
+            "quality": quality,
+            "audit": audit,
+            "feasibility": decision,
+        },
+        output,
+    )
     typer.echo(str(output))
 
 
@@ -314,14 +427,45 @@ def delayed_report(
 
 
 @app.command("prediction-report")
-def report_predictions(config: Path | None = None) -> None:
+def report_predictions(
+    config: Path | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> None:
     settings = load_settings(config)
+    try:
+        start = date.fromisoformat(start_date) if start_date else None
+        end = date.fromisoformat(end_date) if end_date else None
+    except ValueError as exc:
+        raise typer.BadParameter("dates must use YYYY-MM-DD") from exc
     labelled = settings.data_dir / "monitoring" / "labelled_predictions.jsonl"
     source = labelled if labelled.exists() else settings.data_dir / "logs" / "predictions.jsonl"
-    report = prediction_report(source, settings.data_dir / "logs" / "api_requests.jsonl")
-    output = settings.report_dir / "predictions.json"
+    report = prediction_report(
+        source,
+        settings.data_dir / "logs" / "api_requests.jsonl",
+        start,
+        end,
+        settings.timezone,
+    )
+    suffix = (
+        f"-{start.isoformat() if start else 'start'}-{end.isoformat() if end else 'end'}"
+        if start or end
+        else ""
+    )
+    output = settings.report_dir / f"predictions{suffix}.json"
     write_report(report, output)
     typer.echo(str(output))
+
+
+@app.command("probe-serving")
+def probe_serving(config: Path | None = None, api_url: str = "http://127.0.0.1:8000") -> None:
+    """Request one fresh live prediction per selected route for serving telemetry."""
+    import httpx
+
+    settings = load_settings(config)
+    with httpx.Client(base_url=api_url, timeout=10.0) as client:
+        result = probe_once(settings, client)
+    typer.echo(json.dumps(asdict(result), indent=2))
 
 
 @app.command("evidence-report")
@@ -354,6 +498,16 @@ def train(dataset: Path, config: Path | None = None, strong_model: bool = False)
         raise typer.BadParameter(
             "locked evaluation requires 28 complete usable dataset service days"
         )
+    policy_path = settings.data_dir / "state" / "label-policy.json"
+    if not policy_path.exists():
+        raise typer.BadParameter("locked evaluation requires an approved label policy")
+    label_policy = LabelPolicy.load(policy_path)
+    label_policy.verify_archives(settings.data_dir)
+    manifest_data = json.loads((dataset.parent / "manifest.json").read_text())
+    if manifest_data.get("label_policy_version") != label_policy.version:
+        raise typer.BadParameter("dataset label policy does not match the approved policy")
+    if hashlib.sha256(dataset.read_bytes()).hexdigest() != manifest_data.get("content_sha256"):
+        raise typer.BadParameter("dataset content checksum does not match its manifest")
     missing_label_rate = (
         sum(
             not isinstance(row.get("label"), dict) or row["label"].get("status") != "labelled"
@@ -451,7 +605,6 @@ def train(dataset: Path, config: Path | None = None, strong_model: bool = False)
         for name, indexes in (("train", train_i), ("validation", validation_i), ("test", test_i))
     }
     git_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    manifest_data = json.loads((dataset.parent / "manifest.json").read_text())
     artifact_store = ArtifactStore(settings.artifact_dir)
     manifest = artifact_store.save(
         model, manifest_data["dataset_version"], {"q05": interval["q05"], "q95": interval["q95"]}

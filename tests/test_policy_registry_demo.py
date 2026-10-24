@@ -73,6 +73,21 @@ def test_cli_archives_the_exact_audit_behind_a_label_policy(tmp_path) -> None:
             }
         )
     )
+    frozen_dir = reports / "label-audits"
+    frozen_dir.mkdir()
+    audit_digest = hashlib.sha256(audit.read_bytes()).hexdigest()
+    (frozen_dir / f"{audit_digest}.json").write_bytes(audit.read_bytes())
+    review = reports / "trip-timelines-reviewed.json"
+    samples = [
+        {
+            "trip_key": f"v|2026-08-{10 + index // 5:02d}|trip-{index}|",
+            "route": "099",
+            "review_status": "reviewed",
+            "review_notes": "target updates inspected",
+        }
+        for index in range(10)
+    ]
+    review.write_text(json.dumps({"audit_sha256": audit_digest, "samples": samples}))
     (reports / "dataset-quality.json").write_text(
         json.dumps({"strict_join_success_rate": 0.95, "service_days": 2})
     )
@@ -90,8 +105,6 @@ def test_cli_archives_the_exact_audit_behind_a_label_policy(tmp_path) -> None:
             str(config),
             "--target-type",
             "reported_delay_state",
-            "--reviewed-trip-timelines",
-            "10",
         ],
     )
 
@@ -99,6 +112,12 @@ def test_cli_archives_the_exact_audit_behind_a_label_policy(tmp_path) -> None:
     policy = LabelPolicy.load(data / "state/label-policy.json")
     archived = data / "state/label-audits" / f"{policy.audit_sha256}.json"
     assert archived.read_bytes() == audit.read_bytes()
+    review_archive = data / "state/label-reviews" / f"{policy.review_sha256}.json"
+    assert review_archive.read_bytes() == review.read_bytes()
+    policy.verify_archives(data)
+    review_archive.write_text("{}")
+    with pytest.raises(RuntimeError, match="review checksum"):
+        policy.verify_archives(data)
 
     audit.write_text(
         json.dumps(
@@ -113,6 +132,9 @@ def test_cli_archives_the_exact_audit_behind_a_label_policy(tmp_path) -> None:
             }
         )
     )
+    audit_digest = hashlib.sha256(audit.read_bytes()).hexdigest()
+    (frozen_dir / f"{audit_digest}.json").write_bytes(audit.read_bytes())
+    review.write_text(json.dumps({"audit_sha256": audit_digest, "samples": samples}))
     measured = CliRunner().invoke(
         app,
         [
@@ -121,8 +143,6 @@ def test_cli_archives_the_exact_audit_behind_a_label_policy(tmp_path) -> None:
             str(config),
             "--target-type",
             "measured_arrival",
-            "--reviewed-trip-timelines",
-            "10",
         ],
     )
     assert measured.exit_code != 0

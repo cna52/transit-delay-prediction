@@ -39,6 +39,7 @@ def test_api_serves_explicit_persistence_fallback(tmp_path) -> None:
     assert body["quality"] == "fallback"
     assert body["fallback_reason"] == "no_promoted_model"
     assert body["data_mode"] == "live"
+    assert body["predicted_at"]
     assert (tmp_path / "logs/predictions.jsonl").exists()
     metrics = client.get("/v1/metrics/predictions").json()
     assert metrics["requests"] == 1

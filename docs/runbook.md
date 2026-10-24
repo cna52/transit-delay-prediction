@@ -26,6 +26,14 @@ run the two feeds every four minutes and rebuild reports on the configured sched
 Sleeping or powering off this computer creates real collection gaps and extends the evidence
 window. Do not combine this directory with the August sample.
 
+The `com.cna52.transit-delay.probe` LaunchAgent requests one fresh prediction per selected route
+every 15 minutes. Its attempts are retained under the isolated data directory, and the API logs
+prediction time, latency, freshness, and fallback reason. Check current telemetry with
+`transit-delay prediction-report --config configs/evidence.yaml`. After the locked evaluation,
+pass `--start-date YYYY-MM-DD --end-date YYYY-MM-DD` to retain a separate seven-day report for
+the subsequent monitoring window. Earlier probes are baseline diagnostics and do not count toward
+that seven-day window.
+
 For a durable offline demo, run `transit-delay seed-demo` and serve `configs/replay.yaml`. API
 responses identify replay/synthetic mode; those rows must not be included in live reliability or
 model claims.

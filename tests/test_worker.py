@@ -1,8 +1,11 @@
 import json
 from datetime import UTC, datetime, timedelta
 
+from typer.testing import CliRunner
+
 from tests.helpers import write_static_fixture
 from tests.test_integration import realtime_payload
+from transit_delay.cli import app
 from transit_delay.config import Settings
 from transit_delay.datasets.resolver import read_features
 from transit_delay.gtfs.realtime import parse_feed
@@ -46,3 +49,11 @@ def test_worker_builds_atomic_snapshot_heartbeat_and_reports(tmp_path) -> None:
     summary = build_portfolio_summary(data, reports)
     assert "Attempts / successes" in summary
     assert "no immutable dataset" in summary
+
+    config = tmp_path / "scope.yaml"
+    config.write_text(f"data_dir: {data}\nreport_dir: {reports}\nselected_routes: ['099']\n")
+    scoped = CliRunner().invoke(app, ["route-scope-report", "099", "--config", str(config)])
+    assert scoped.exit_code == 0, scoped.output
+    scoped_report = json.loads((reports / "route-scopes/099.json").read_text())
+    assert scoped_report["routes"] == ["099"]
+    assert scoped_report["processing"]["joined"] >= 1
