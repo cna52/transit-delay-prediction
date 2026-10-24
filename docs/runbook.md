@@ -26,6 +26,13 @@ run the two feeds every four minutes and rebuild reports on the configured sched
 Sleeping or powering off this computer creates real collection gaps and extends the evidence
 window. Do not combine this directory with the August sample.
 
+The worker rebuilds the full offline features when the Vancouver date changes, then refreshes
+the audit and feasibility report. After two complete audited usable dates, its first report pass
+after 01:00 local time freezes a checksummed `trip-timelines-DATE-DATE.json` review packet under
+the ignored reports directory. Copy that packet to `trip-timelines-reviewed.json`, inspect and
+annotate ten distinct trips, and run the policy command only if every gate passes. The generated
+packet stays pending until a person reviews it.
+
 The `com.cna52.transit-delay.probe` LaunchAgent requests one fresh prediction per selected route
 every 15 minutes. Its attempts are retained under the isolated data directory, and the API logs
 prediction time, latency, freshness, and fallback reason. Check current telemetry with

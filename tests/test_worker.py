@@ -13,7 +13,13 @@ from transit_delay.gtfs.registry import StaticFeedRegistry
 from transit_delay.ingestion.archive import ImmutableArchive
 from transit_delay.monitoring.audit import audit_feeds
 from transit_delay.monitoring.evidence import build_portfolio_summary
-from transit_delay.worker import Worker, build_features, refresh_reports
+from transit_delay.worker import (
+    Worker,
+    build_features,
+    offline_rebuild_due,
+    refresh_reports,
+    write_trip_review_packet,
+)
 
 
 def test_worker_builds_atomic_snapshot_heartbeat_and_reports(tmp_path) -> None:
@@ -46,6 +52,28 @@ def test_worker_builds_atomic_snapshot_heartbeat_and_reports(tmp_path) -> None:
     assert audit.label_semantics is not None
     assert audit.label_semantics["examples_checked"] == 0
     assert audit.label_semantics["pending_examples"] == 1
+    packet = write_trip_review_packet(
+        settings,
+        list((data / "raw/manifests").glob("*.jsonl")),
+        features,
+        {"audited_complete_dates": ["2026-08-10", "2026-08-11"]},
+    )
+    assert packet is not None
+    packet_value = json.loads(packet.read_text())
+    assert len(packet_value["audit_sha256"]) == 64
+    assert packet_value["complete_usable_dates"] == ["2026-08-10", "2026-08-11"]
+    assert (reports / "label-audits" / f"{packet_value['audit_sha256']}.json").exists()
+    packet_bytes = packet.read_bytes()
+    assert (
+        write_trip_review_packet(
+            settings,
+            list((data / "raw/manifests").glob("*.jsonl")),
+            features,
+            {"audited_complete_dates": ["2026-08-10", "2026-08-11"]},
+        )
+        == packet
+    )
+    assert packet.read_bytes() == packet_bytes
     summary = build_portfolio_summary(data, reports)
     assert "Attempts / successes" in summary
     assert "no immutable dataset" in summary
@@ -57,6 +85,37 @@ def test_worker_builds_atomic_snapshot_heartbeat_and_reports(tmp_path) -> None:
     scoped_report = json.loads((reports / "route-scopes/099.json").read_text())
     assert scoped_report["routes"] == ["099"]
     assert scoped_report["processing"]["joined"] >= 1
+    short = CliRunner().invoke(
+        app,
+        [
+            "route-scope-report",
+            "099",
+            "--config",
+            str(config),
+            "--min-horizon-seconds",
+            "300",
+            "--max-horizon-seconds",
+            "600",
+        ],
+    )
+    assert short.exit_code == 0, short.output
+    short_report = json.loads((reports / "route-scopes/099-h300-600.json").read_text())
+    assert short_report["horizon_seconds"] == {"minimum": 300, "maximum": 600}
+    assert json.loads((reports / "route-scopes/099.json").read_text()) == scoped_report
+    invalid = CliRunner().invoke(
+        app,
+        [
+            "route-scope-report",
+            "099",
+            "--config",
+            str(config),
+            "--min-horizon-seconds",
+            "600",
+            "--max-horizon-seconds",
+            "300",
+        ],
+    )
+    assert invalid.exit_code != 0
 
 
 def test_serving_replays_only_the_recent_window(tmp_path) -> None:
@@ -76,3 +135,11 @@ def test_serving_replays_only_the_recent_window(tmp_path) -> None:
     _, offline = build_features(settings, recent=False)
     assert recent.snapshots == 1
     assert offline.snapshots == 2
+
+
+def test_offline_rebuild_runs_at_local_day_rollover() -> None:
+    from datetime import date
+
+    assert offline_rebuild_due(20, 100, date(2026, 10, 22), date(2026, 10, 23))
+    assert not offline_rebuild_due(20, 100, date(2026, 10, 23), date(2026, 10, 23))
+    assert offline_rebuild_due(101, 100, date(2026, 10, 23), date(2026, 10, 23))

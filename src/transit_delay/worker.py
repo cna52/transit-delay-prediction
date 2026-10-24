@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import signal
@@ -7,7 +8,7 @@ import time
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import asdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -20,7 +21,7 @@ from transit_delay.domain import FeatureRow
 from transit_delay.features.builder import FeatureBuilder
 from transit_delay.gtfs.registry import StaticFeedRegistry
 from transit_delay.gtfs.static import archive_static_zip
-from transit_delay.monitoring.audit import archived_feeds, audit_feeds
+from transit_delay.monitoring.audit import archived_feeds, audit_feeds, trip_timeline_samples
 from transit_delay.monitoring.delayed import join_delayed_labels
 from transit_delay.monitoring.feasibility import feasibility_gates
 from transit_delay.monitoring.report import collection_report, prediction_report, write_report
@@ -220,14 +221,63 @@ def refresh_reports(settings: Settings) -> dict[str, object]:
     audit = audit_feeds(archived_feeds(manifests), features)
     write_report(audit, settings.report_dir / "feed-audit.json")
     quality_path = settings.report_dir / "dataset-quality.json"
+    review_packet: Path | None = None
     if quality_path.exists():
         quality = json.loads(quality_path.read_text())
         today = datetime.now(UTC).astimezone(ZoneInfo(settings.timezone)).date()
+        feasibility = feasibility_gates(asdict(collection), quality, asdict(audit), today)
         write_report(
-            feasibility_gates(asdict(collection), quality, asdict(audit), today),
+            feasibility,
             settings.report_dir / "feasibility.json",
         )
-    return {"status": "complete", "collection": asdict(collection), "audit": asdict(audit)}
+        if datetime.now(UTC).astimezone(ZoneInfo(settings.timezone)).hour >= 1:
+            review_packet = write_trip_review_packet(settings, manifests, features, feasibility)
+    return {
+        "status": "complete",
+        "collection": asdict(collection),
+        "audit": asdict(audit),
+        "trip_review_packet": str(review_packet) if review_packet else None,
+    }
+
+
+def write_trip_review_packet(
+    settings: Settings,
+    manifests: list[Path],
+    features: list[FeatureRow],
+    feasibility: dict[str, object],
+) -> Path | None:
+    """Freeze one review packet for each pair of complete audited dates."""
+    if (settings.data_dir / "state" / "label-policy.json").exists():
+        return None
+    day_values = feasibility.get("audited_complete_dates")
+    days = [str(day) for day in day_values][-2:] if isinstance(day_values, list) else []
+    if len(days) < 2:
+        return None
+    output = settings.report_dir / f"trip-timelines-{days[0]}-{days[1]}.json"
+    if output.exists():
+        return output
+    audit_path = settings.report_dir / "feed-audit.json"
+    payload = audit_path.read_bytes()
+    digest = hashlib.sha256(payload).hexdigest()
+    archive = settings.report_dir / "label-audits" / f"{digest}.json"
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    if not archive.exists():
+        archive.write_bytes(payload)
+    samples = trip_timeline_samples(archived_feeds(manifests), features, service_dates=set(days))
+    write_report(
+        {
+            "audit_sha256": digest,
+            "complete_usable_dates": days,
+            "sample_count": len(samples),
+            "samples": samples,
+        },
+        output,
+    )
+    return output
+
+
+def offline_rebuild_due(now: float, next_due: float, last_day: date | None, today: date) -> bool:
+    return now >= next_due or last_day != today
 
 
 class Worker:
@@ -278,8 +328,11 @@ class Worker:
         signal.signal(signal.SIGTERM, self.stop)
         signal.signal(signal.SIGINT, self.stop)
         next_serving = next_reports = next_offline = next_static = 0.0
+        last_offline_day: date | None = None
+        timezone = ZoneInfo(self.settings.timezone)
         while self.running:
             now = time.monotonic()
+            local_day = datetime.now(UTC).astimezone(timezone).date()
             try:
                 if now >= next_static:
                     refresh_static(self.settings)
@@ -298,7 +351,7 @@ class Worker:
                 if now >= next_reports:
                     refresh_reports(self.settings)
                     next_reports = now + self.settings.reporting_interval_seconds
-                if now >= next_offline:
+                if offline_rebuild_due(now, next_offline, last_offline_day, local_day):
                     features, stats = build_features(self.settings, recent=False)
                     dataset = build_labels_and_dataset(self.settings, features)
                     quality = write_dataset_quality(self.settings, features, stats)
@@ -311,6 +364,7 @@ class Worker:
                         dataset_quality=quality,
                     )
                     next_offline = now + self.settings.offline_rebuild_interval_seconds
+                    last_offline_day = local_day
             except Exception as exc:
                 write_state(
                     self.state_path,

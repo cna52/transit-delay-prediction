@@ -381,12 +381,25 @@ def feasibility_report(config: Path | None = None) -> None:
 
 
 @app.command("route-scope-report")
-def route_scope_report(routes: str, config: Path | None = None) -> None:
-    """Replay selected routes into an isolated feasibility report."""
+def route_scope_report(
+    routes: str,
+    config: Path | None = None,
+    min_horizon_seconds: int | None = None,
+    max_horizon_seconds: int | None = None,
+) -> None:
+    """Replay selected routes and horizon into an isolated feasibility report."""
     settings = load_settings(config)
     selected = tuple(sorted({route.strip() for route in routes.split(",") if route.strip()}))
     if not selected or not set(selected) <= set(settings.selected_routes):
         raise typer.BadParameter("routes must be a nonempty subset of selected_routes")
+    minimum = (
+        settings.target_horizon_min_seconds if min_horizon_seconds is None else min_horizon_seconds
+    )
+    maximum = (
+        settings.target_horizon_max_seconds if max_horizon_seconds is None else max_horizon_seconds
+    )
+    if minimum <= 0 or minimum >= maximum:
+        raise typer.BadParameter("horizon bounds must be positive and increasing")
     manifests = sorted((settings.data_dir / "raw" / "manifests").glob("*.jsonl"))
     if not manifests:
         raise typer.BadParameter("no live manifests exist for route replay")
@@ -395,8 +408,8 @@ def route_scope_report(routes: str, config: Path | None = None) -> None:
         bootstrap_registry(settings),
         set(selected),
         FeatureBuilder(
-            settings.target_horizon_min_seconds,
-            settings.target_horizon_max_seconds,
+            minimum,
+            maximum,
             settings.example_cooldown_seconds,
             settings.timezone,
         ),
@@ -410,10 +423,16 @@ def route_scope_report(routes: str, config: Path | None = None) -> None:
     collection = asdict(collection_report(manifests, settings.timezone))
     today = datetime.now(UTC).astimezone(ZoneInfo(settings.timezone)).date()
     decision = feasibility_gates(collection, quality, audit, today)
-    output = settings.report_dir / "route-scopes" / f"{'-'.join(selected)}.json"
+    suffix = (
+        f"-h{minimum}-{maximum}"
+        if min_horizon_seconds is not None or max_horizon_seconds is not None
+        else ""
+    )
+    output = settings.report_dir / "route-scopes" / f"{'-'.join(selected)}{suffix}.json"
     write_report(
         {
             "routes": selected,
+            "horizon_seconds": {"minimum": minimum, "maximum": maximum},
             "processing": asdict(stats),
             "quality": quality,
             "audit": audit,

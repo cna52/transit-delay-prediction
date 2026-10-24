@@ -76,6 +76,11 @@ the brief October 22 slice reached 58.7% across 184 examples and the ongoing Oct
 reached 19.3% across 2,137. Neither is a two-complete-day result. The retained
 `feasibility.json` and `route-scopes/R5.json` reports hold these counts.
 
+An isolated R5 replay at a shorter 5–10-minute horizon produced 101 candidates among 394 mature
+examples (25.6%), below the 31.1% observed at the planned 10–15-minute horizon. This is an
+exploratory target change, not an approved label or a live configuration change. The retained
+`route-scopes/R5-h300-600.json` report records its joins and missingness.
+
 ## Reproduce and inspect
 
 ```bash

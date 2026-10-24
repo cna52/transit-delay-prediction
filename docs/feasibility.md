@@ -49,6 +49,11 @@ sparse or unstable, run `transit-delay route-scope-report 099 --config configs/e
 for a recommended route. This replay writes a separate report and leaves live serving data
 untouched. Narrow the active configuration only if the scoped join and label gates also pass. If strict Static joins or
 even the proxy remain unreliable, stop or change the project rather than mislabel it.
+An exploratory shorter-horizon replay can use
+`transit-delay route-scope-report R5 --config configs/evidence.yaml --min-horizon-seconds 300 --max-horizon-seconds 600`.
+The report is isolated under `route-scopes/` and does not change the approved 10–15-minute target,
+the live service, or its gate. A shorter horizon is a different prediction question and needs a
+new policy decision before evaluation.
 
 The feasibility report explains missing candidates as no trip update during the window, a trip
 update without the target stop, or a target stop without an arrival value. It further separates
