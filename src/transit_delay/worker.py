@@ -225,7 +225,7 @@ def refresh_reports(settings: Settings) -> dict[str, object]:
         from transit_delay.datasets.resolver import read_features
 
         features = read_features(features_path)
-    audit = audit_feeds(archived_feeds(manifests), features)
+    audit = audit_feeds(archived_feeds(manifests), features, timezone_name=settings.timezone)
     write_report(audit, settings.report_dir / "feed-audit.json")
     quality_path = settings.report_dir / "dataset-quality.json"
     review_packet: Path | None = None
@@ -270,7 +270,12 @@ def write_trip_review_packet(
     archive.parent.mkdir(parents=True, exist_ok=True)
     if not archive.exists():
         archive.write_bytes(payload)
-    samples = trip_timeline_samples(archived_feeds(manifests), features, service_dates=set(days))
+    samples = trip_timeline_samples(
+        archived_feeds(manifests),
+        features,
+        local_dates=set(days),
+        timezone_name=settings.timezone,
+    )
     write_report(
         {
             "audit_sha256": digest,

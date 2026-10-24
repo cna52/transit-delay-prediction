@@ -214,16 +214,19 @@ def create_label_policy(
         raise typer.BadParameter("strict Static join success rate must be at least 90%")
     today = datetime.now(UTC).astimezone(ZoneInfo(settings.timezone)).date().isoformat()
     complete_dates = [day for day in collection.get("usable_service_dates", []) if day < today]
+    by_local_date = semantics.get("by_local_date") or {}
     audited_dates = [
         day
-        for day, values in (semantics.get("by_service_date") or {}).items()
+        for day, values in by_local_date.items()
         if day in complete_dates and int(values.get("examples") or 0) > 0
     ]
     if len(audited_dates) < 2 or int(quality.get("service_days", 0)) < 2:
         raise typer.BadParameter("label audit requires at least two usable service days")
-    if int(semantics.get("examples_checked", 0)) < 100:
+    gate_examples = sum(int(by_local_date[day].get("examples") or 0) for day in audited_dates)
+    gate_candidates = sum(int(by_local_date[day].get("candidates") or 0) for day in audited_dates)
+    if gate_examples < 100:
         raise typer.BadParameter("label audit requires at least 100 eligible examples")
-    if float(semantics.get("candidate_coverage", 0)) < 0.7:
+    if gate_candidates / gate_examples < 0.7:
         raise typer.BadParameter("candidate-label coverage must be at least 70%")
     if review_value.get("audit_sha256") != hashlib.sha256(audit.read_bytes()).hexdigest():
         raise typer.BadParameter("timeline review must match the exact feed audit")
@@ -234,11 +237,11 @@ def create_label_policy(
         and str(sample.get("review_notes", "")).strip()
         and str(sample.get("route")) in settings.selected_routes
         and len(str(sample.get("trip_key", "")).split("|")) == 4
-        and str(sample["trip_key"]).split("|")[1] in complete_dates
+        and str(sample.get("local_date")) in complete_dates
     ]
     if len({sample.get("trip_key") for sample in reviewed}) < 10:
         raise typer.BadParameter("review at least ten distinct trip timelines with notes")
-    if len({str(sample["trip_key"]).split("|")[1] for sample in reviewed}) < 2:
+    if len({str(sample["local_date"]) for sample in reviewed}) < 2:
         raise typer.BadParameter("review trip timelines from two service days")
     if target_type == "measured_arrival" and (
         int(semantics.get("post_passage_retained_twice", 0)) < 10
@@ -335,7 +338,7 @@ def feed_audit(config: Path | None = None) -> None:
     settings = load_settings(config)
     feeds = archived_feeds((settings.data_dir / "raw" / "manifests").glob("*.jsonl"))
     features = _audit_features(settings)
-    report = audit_feeds(feeds, features)
+    report = audit_feeds(feeds, features, timezone_name=settings.timezone)
     output = settings.report_dir / "feed-audit.json"
     write_report(report, output)
     typer.echo(str(output))
@@ -368,7 +371,8 @@ def trip_timelines(config: Path | None = None, limit: int = 10) -> None:
         archived_feeds((settings.data_dir / "raw" / "manifests").glob("*.jsonl")),
         _audit_features(settings),
         limit,
-        complete_dates if len(complete_dates) >= 2 else None,
+        local_dates=complete_dates if len(complete_dates) >= 2 else None,
+        timezone_name=settings.timezone,
     )
     output = settings.report_dir / "trip-timelines.json"
     write_report({"audit_sha256": digest, "sample_count": len(samples), "samples": samples}, output)
@@ -441,7 +445,13 @@ def route_scope_report(
         "service_days": len({row.key.service_date for row in rows}),
     }
     audit = asdict(
-        audit_feeds(archived_feeds(manifests), rows, label_lag_seconds, candidate_window_seconds)
+        audit_feeds(
+            archived_feeds(manifests),
+            rows,
+            label_lag_seconds,
+            candidate_window_seconds,
+            settings.timezone,
+        )
     )
     collection = asdict(
         collection_report(

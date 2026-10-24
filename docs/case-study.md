@@ -75,6 +75,9 @@ excluding its 49 windows without a feed poll. It also fails the gate. By *featur
 the brief October 22 slice reached 58.7% across 184 examples and the ongoing October 23 date
 reached 19.3% across 2,137. Neither is a two-complete-day result. The retained
 `feasibility.json` and `route-scopes/R5.json` reports hold these counts.
+The final feasibility gate uses the feature's **local prediction date** and only dates whose
+collection day has closed; the partial October 22 and ongoing October 23 observations above are
+diagnostics, not gate inputs.
 
 An isolated R5 replay at a shorter 5–10-minute horizon produced 101 candidates among 394 mature
 examples (25.6%), below the 31.1% observed at the planned 10–15-minute horizon. This is an

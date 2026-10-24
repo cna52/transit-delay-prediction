@@ -65,6 +65,7 @@ def test_audit_candidate_must_arrive_within_30_minutes() -> None:
     assert late_only["missing_candidate_reasons"] == {"no_trip_update_in_window": 1}
     assert late_only["no_trip_update_poll_context"] == {"feed_poll_gap": 1}
     assert late_only["by_service_date"]["2026-08-10"]["examples"] == 1
+    assert late_only["by_local_date"]["2026-08-10"]["examples"] == 1
     early = target - timedelta(minutes=7)
     probe = audit_feeds(
         [(feed, early), (feed, too_late)],
@@ -114,6 +115,7 @@ def test_audit_candidate_must_arrive_within_30_minutes() -> None:
     )
     scoped = trip_timeline_samples([], [feature, later_feature], service_dates={"2026-08-11"})
     assert [row["trip_key"] for row in scoped] == [later_feature.key.stable_id()]
+    assert trip_timeline_samples([], [later_feature], local_dates={"2026-08-11"}) == []
 
 
 def test_locked_train_rejects_short_window(tmp_path) -> None:

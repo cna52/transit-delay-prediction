@@ -71,6 +71,10 @@ def test_cli_archives_the_exact_audit_behind_a_label_policy(tmp_path) -> None:
                         "2026-08-10": {"examples": 50},
                         "2026-08-11": {"examples": 50},
                     },
+                    "by_local_date": {
+                        "2026-08-10": {"examples": 50, "candidates": 40},
+                        "2026-08-11": {"examples": 50, "candidates": 40},
+                    },
                     "post_passage_retained_twice": 0,
                     "vehicle_position_confirmed": 0,
                 }
@@ -85,6 +89,7 @@ def test_cli_archives_the_exact_audit_behind_a_label_policy(tmp_path) -> None:
     samples = [
         {
             "trip_key": f"v|2026-08-{10 + index // 5:02d}|trip-{index}|",
+            "local_date": f"2026-08-{10 + index // 5:02d}",
             "route": "099",
             "review_status": "reviewed",
             "review_notes": "target updates inspected",
@@ -132,6 +137,10 @@ def test_cli_archives_the_exact_audit_behind_a_label_policy(tmp_path) -> None:
                     "by_service_date": {
                         "2026-08-10": {"examples": 50},
                         "2026-08-11": {"examples": 50},
+                    },
+                    "by_local_date": {
+                        "2026-08-10": {"examples": 50, "candidates": 40},
+                        "2026-08-11": {"examples": 50, "candidates": 40},
                     },
                     "post_passage_retained_twice": 10,
                     "vehicle_position_confirmed": 10,

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from transit_delay.domain import FeatureRow
 from transit_delay.gtfs.realtime import ParsedFeed, parse_feed
@@ -32,6 +33,7 @@ def audit_feeds(
     features: Iterable[FeatureRow] | None = None,
     label_lag_seconds: int | None = None,
     candidate_window_seconds: int = 1800,
+    timezone_name: str = "America/Vancouver",
 ) -> FeedAudit:
     if label_lag_seconds is not None and label_lag_seconds <= 0:
         raise ValueError("label lag must be positive")
@@ -132,6 +134,7 @@ def audit_feeds(
             feature_list,
             label_lag_seconds,
             candidate_window_seconds,
+            timezone_name,
         ),
     )
 
@@ -144,6 +147,7 @@ def _label_semantics(
     features: list[FeatureRow],
     label_lag_seconds: int | None,
     candidate_window_seconds: int,
+    timezone_name: str,
 ) -> dict[str, object] | None:
     if not features:
         return None
@@ -158,6 +162,9 @@ def _label_semantics(
     missing_with_prior_target = 0
     no_trip_update_poll_context: Counter[str] = Counter()
     candidate_lags: list[float] = []
+    local_dates: dict[str, Counter[str]] = {}
+    routes_by_local_date: dict[str, dict[str, Counter[str]]] = {}
+    timezone = ZoneInfo(timezone_name)
     sampled_trip_ids: set[str] = set()
     for feature in features:
         sampled_trip_ids.add(feature.key.trip_id)
@@ -165,9 +172,14 @@ def _label_semantics(
             seconds=feature.horizon_seconds if label_lag_seconds is None else label_lag_seconds
         )
         deadline = label_time + timedelta(seconds=candidate_window_seconds)
+        local_day = feature.as_of.astimezone(timezone).date().isoformat()
         group_counts = (
             routes.setdefault(feature.route_short_name, Counter()),
             service_dates.setdefault(feature.key.service_date.isoformat(), Counter()),
+            local_dates.setdefault(local_day, Counter()),
+            routes_by_local_date.setdefault(local_day, {}).setdefault(
+                feature.route_short_name, Counter()
+            ),
         )
         if latest_received_at is None or latest_received_at < deadline:
             pending += 1
@@ -304,6 +316,19 @@ def _label_semantics(
             }
             for day, counts in service_dates.items()
         },
+        "by_local_date": {
+            day: {
+                **dict(counts),
+                "candidate_coverage": counts["candidates"] / counts["examples"]
+                if counts["examples"]
+                else 0.0,
+            }
+            for day, counts in local_dates.items()
+        },
+        "by_route_local_date": {
+            day: {route: dict(counts) for route, counts in route_counts.items()}
+            for day, route_counts in routes_by_local_date.items()
+        },
         "measured_arrival_automatically_approved": False,
         "decision": "manual_review_required",
     }
@@ -314,20 +339,26 @@ def trip_timeline_samples(
     features: Iterable[FeatureRow],
     limit: int = 10,
     service_dates: set[str] | None = None,
+    local_dates: set[str] | None = None,
+    timezone_name: str = "America/Vancouver",
 ) -> list[dict[str, object]]:
     """Retain route/day-balanced trip evidence for the required human review."""
     if limit < 1:
         raise ValueError("timeline sample limit must be positive")
     groups: dict[tuple[str, str], list[FeatureRow]] = {}
     seen: set[str] = set()
+    timezone = ZoneInfo(timezone_name)
     for row in sorted(features, key=lambda value: value.as_of):
         if service_dates is not None and row.key.service_date.isoformat() not in service_dates:
+            continue
+        local_day = row.as_of.astimezone(timezone).date().isoformat()
+        if local_dates is not None and local_day not in local_dates:
             continue
         key = row.key.stable_id()
         if key in seen:
             continue
         seen.add(key)
-        groups.setdefault((row.key.service_date.isoformat(), row.route_short_name), []).append(row)
+        groups.setdefault((local_day, row.route_short_name), []).append(row)
     chosen: list[FeatureRow] = []
     while len(chosen) < limit and any(groups.values()):
         for group in sorted(groups):
@@ -404,6 +435,7 @@ def trip_timeline_samples(
                 "trip_key": row.key.stable_id(),
                 "example_id": row.example_id,
                 "route": row.route_short_name,
+                "local_date": row.as_of.astimezone(timezone).date().isoformat(),
                 "as_of": row.as_of.isoformat(),
                 "feature_source_age_seconds": row.source_age_seconds,
                 "scheduled_target_arrival": row.scheduled_target_arrival.isoformat(),

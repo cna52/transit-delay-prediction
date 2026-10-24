@@ -26,7 +26,7 @@ engineering gates, not achieved claims.
 Run `transit-delay feed-audit` and `transit-delay trip-timelines --config configs/evidence.yaml`.
 Run `transit-delay feasibility-report --config configs/evidence.yaml` after refreshing the
 collection and dataset-quality reports. It marks each gate, counts only complete Vancouver days,
-requires feature examples from two of those dates in the frozen audit, and names routes worth a
+requires feature examples timestamped on two of those dates in the frozen audit, and names routes worth a
 scoped replay if the all-route candidate rate fails. A route suggestion
 is provisional until its own strict Static join rate and manual timelines are checked.
 The timeline report samples ten distinct trips across available routes and service dates for
@@ -64,9 +64,10 @@ production audit until a new protocol is reviewed and locked.
 The feasibility report explains missing candidates as no trip update during the window, a trip
 update without the target stop, or a target stop without an arrival value. It further separates
 windows with no successful Trip Updates poll from windows where the feed was polled but the trip
-was absent. `candidate_coverage_when_feed_polled` is diagnostic only: the 70% gate still uses all
-mature examples. `by_service_date` shows coverage by the feature's GTFS service date, which can
-cross a local midnight.
+was absent. `candidate_coverage_when_feed_polled` is diagnostic only: the 70% gate uses mature
+examples from complete usable local dates. The report keeps all-observation coverage for
+diagnosis and adds `gate_candidate_coverage` for the decision. `by_service_date` shows the
+feature's GTFS service date, which can cross a local midnight; `by_local_date` is the gate basis.
 
 The initial live sample does not establish feasibility: it contains too few examples and no
 confirmed retained post-passage updates. That is a current finding, not a permanent conclusion
