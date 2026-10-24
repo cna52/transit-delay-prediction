@@ -210,7 +210,14 @@ def refresh_reports(settings: Settings) -> dict[str, object]:
     manifests = _manifests(settings)
     if not manifests:
         return {"status": "no_manifests"}
-    collection = collection_report(manifests, settings.timezone)
+    collection = collection_report(
+        manifests,
+        settings.timezone,
+        {
+            "trip_updates": settings.trip_updates_interval_seconds,
+            "vehicle_positions": settings.vehicle_positions_interval_seconds,
+        },
+    )
     write_report(collection, settings.report_dir / "collection.json")
     features_path = settings.data_dir / "processed" / "features.jsonl"
     features = []

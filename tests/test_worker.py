@@ -101,6 +101,8 @@ def test_worker_builds_atomic_snapshot_heartbeat_and_reports(tmp_path) -> None:
     assert short.exit_code == 0, short.output
     short_report = json.loads((reports / "route-scopes/099-h300-600.json").read_text())
     assert short_report["horizon_seconds"] == {"minimum": 300, "maximum": 600}
+    assert short_report["feasibility"]["status"] == "exploratory_target"
+    assert short_report["feasibility"]["production_policy_eligible"] is False
     assert json.loads((reports / "route-scopes/099.json").read_text()) == scoped_report
     invalid = CliRunner().invoke(
         app,
@@ -116,6 +118,23 @@ def test_worker_builds_atomic_snapshot_heartbeat_and_reports(tmp_path) -> None:
         ],
     )
     assert invalid.exit_code != 0
+    lag_probe = CliRunner().invoke(
+        app,
+        [
+            "route-scope-report",
+            "099",
+            "--config",
+            str(config),
+            "--label-lag-seconds",
+            "300",
+            "--candidate-window-seconds",
+            "240",
+        ],
+    )
+    assert lag_probe.exit_code == 0, lag_probe.output
+    probe_report = json.loads((reports / "route-scopes/099-lag300-w240.json").read_text())
+    assert probe_report["target_probe"]["exploratory"] is True
+    assert probe_report["feasibility"]["status"] == "exploratory_target"
 
 
 def test_serving_replays_only_the_recent_window(tmp_path) -> None:

@@ -24,6 +24,9 @@ def test_collection_and_delayed_evaluation_are_reproducible(tmp_path) -> None:
     assert report.success_rate == 1
     assert report.duplicate_rate == 0.5
     assert report.largest_gap_by_feed_seconds == {"trip_updates": 120.0}
+    sparse = collection_report([manifest], feed_intervals_seconds={"trip_updates": 60})
+    assert sparse.expected_cadence_slots_by_feed == {"trip_updates": 3}
+    assert sparse.attempted_cadence_fraction_by_feed == {"trip_updates": 2 / 3}
 
     predictions = tmp_path / "predictions.jsonl"
     labels = tmp_path / "labels.jsonl"

@@ -81,6 +81,23 @@ examples (25.6%), below the 31.1% observed at the planned 10–15-minute horizon
 exploratory target change, not an approved label or a live configuration change. The retained
 `route-scopes/R5-h300-600.json` report records its joins and missingness.
 
+Further exploratory replays kept the original 10–15-minute-ahead target stop but sampled its
+*reported delay state* five minutes after prediction, accepting the first value over the next
+eight minutes. Coverage was 47.7% across all four routes and 51.7% on R5 (85.5% and 85.3%,
+respectively, after excluding windows with no feed snapshot); the median actual
+observation lag among candidates was about eight minutes. A 10-minute lag with the same window
+reached only 34.3% on R5. These variants remain below the 70% all-example gate and change the
+prediction question; they are retained under `route-scopes/` as exploratory reports. The
+shorter fixed lag appears promising only when the feed is actually polled during the window,
+which is not a substitute for reliable collection or the two-day review.
+
+At the 22:44 collection check, all 324 attempted fetches succeeded, but each feed had only 162
+attempts across approximately 351 four-minute cadence slots between its first and latest poll:
+46.2% cadence coverage. The largest same-feed gap was about 83 minutes. This explains much of
+the short-window candidate loss and makes uninterrupted collection the immediate operational
+priority. The cadence denominator is the observed first-to-last collection span, not a claim of
+full-day uptime.
+
 ## Reproduce and inspect
 
 ```bash

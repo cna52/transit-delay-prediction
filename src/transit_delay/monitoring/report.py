@@ -29,12 +29,16 @@ class CollectionReport:
     usable_service_dates: tuple[str, ...]
     successes_by_feed: dict[str, int]
     largest_gap_by_feed_seconds: dict[str, float | None]
+    expected_cadence_slots_by_feed: dict[str, int]
+    attempted_cadence_fraction_by_feed: dict[str, float]
     compressed_storage_bytes_by_local_day: dict[str, int]
     projected_56_day_raw_bytes: int | None
 
 
 def collection_report(
-    manifests: list[Path], timezone_name: str = "America/Vancouver"
+    manifests: list[Path],
+    timezone_name: str = "America/Vancouver",
+    feed_intervals_seconds: dict[str, int] | None = None,
 ) -> CollectionReport:
     records = [
         json.loads(line) for path in sorted(manifests) for line in path.read_text().splitlines()
@@ -64,6 +68,9 @@ def collection_report(
         hourly[f"{timestamp.hour:02d}:00"] += 1
     usable_dates = tuple(sorted(day for day, hours in hours_by_day.items() if len(hours) >= 8))
     gaps_by_feed: dict[str, float | None] = {}
+    expected_slots: dict[str, int] = {}
+    attempt_fractions: dict[str, float] = {}
+    intervals = feed_intervals_seconds or {"trip_updates": 120, "vehicle_positions": 600}
     for feed_type in sorted({str(record["feed_type"]) for record in records}):
         requested = sorted(
             datetime.fromisoformat(record["requested_at"])
@@ -77,6 +84,12 @@ def collection_report(
             ),
             default=None,
         )
+        interval = intervals.get(feed_type)
+        if interval and interval > 0 and requested:
+            expected_slots[feed_type] = 1 + int(
+                (requested[-1] - requested[0]).total_seconds() // interval
+            )
+            attempt_fractions[feed_type] = min(1.0, len(requested) / expected_slots[feed_type])
     storage_by_day: Counter[str] = Counter()
     seen_paths: set[str] = set()
     for record in successes:
@@ -113,6 +126,8 @@ def collection_report(
         usable_dates,
         dict(Counter(str(record["feed_type"]) for record in successes)),
         gaps_by_feed,
+        expected_slots,
+        attempt_fractions,
         dict(sorted(storage_by_day.items())),
         projected_storage,
     )

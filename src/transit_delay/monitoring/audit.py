@@ -30,7 +30,13 @@ class FeedAudit:
 def audit_feeds(
     feeds: Iterable[tuple[ParsedFeed, datetime]],
     features: Iterable[FeatureRow] | None = None,
+    label_lag_seconds: int | None = None,
+    candidate_window_seconds: int = 1800,
 ) -> FeedAudit:
+    if label_lag_seconds is not None and label_lag_seconds <= 0:
+        raise ValueError("label lag must be positive")
+    if candidate_window_seconds <= 0:
+        raise ValueError("candidate window must be positive")
     feature_list = list(features or [])
     relevant_days: dict[str, set[str]] = {}
     for feature in feature_list:
@@ -119,7 +125,13 @@ def audit_feeds(
         },
         dict(relationships),
         _label_semantics(
-            timelines, position_timelines, latest_trip_at, trip_poll_times, feature_list
+            timelines,
+            position_timelines,
+            latest_trip_at,
+            trip_poll_times,
+            feature_list,
+            label_lag_seconds,
+            candidate_window_seconds,
         ),
     )
 
@@ -130,6 +142,8 @@ def _label_semantics(
     latest_received_at: datetime | None,
     trip_poll_times: list[datetime],
     features: list[FeatureRow],
+    label_lag_seconds: int | None,
+    candidate_window_seconds: int,
 ) -> dict[str, object] | None:
     if not features:
         return None
@@ -143,11 +157,14 @@ def _label_semantics(
     missing_reasons: Counter[str] = Counter()
     missing_with_prior_target = 0
     no_trip_update_poll_context: Counter[str] = Counter()
+    candidate_lags: list[float] = []
     sampled_trip_ids: set[str] = set()
     for feature in features:
         sampled_trip_ids.add(feature.key.trip_id)
-        label_time = feature.as_of + timedelta(seconds=feature.horizon_seconds)
-        deadline = label_time + timedelta(minutes=30)
+        label_time = feature.as_of + timedelta(
+            seconds=feature.horizon_seconds if label_lag_seconds is None else label_lag_seconds
+        )
+        deadline = label_time + timedelta(seconds=candidate_window_seconds)
         group_counts = (
             routes.setdefault(feature.route_short_name, Counter()),
             service_dates.setdefault(feature.key.service_date.isoformat(), Counter()),
@@ -216,6 +233,9 @@ def _label_semantics(
                     counts["missing_with_prior_target"] += 1
             continue
         candidates += 1
+        candidate_lags.append(
+            (min(value[0] for value in target_values) - feature.as_of).total_seconds()
+        )
         for counts in group_counts:
             counts["candidates"] += 1
         past_values = [value for value in target_values if value[1] and value[1] <= value[0]]
@@ -243,12 +263,21 @@ def _label_semantics(
         if len(past_values) >= 2 and position_passed:
             joint_confirmed += 1
     total = len(features) - pending
+    candidate_lags.sort()
     return {
         "examples_checked": total,
         "pending_examples": pending,
         "trip_timelines": len(sampled_trip_ids),
         "candidate_labels": candidates,
         "candidate_coverage": candidates / total if total else 0.0,
+        "candidate_observation_lag_seconds": {
+            "minimum": min(candidate_lags) if candidate_lags else None,
+            "p50": _quantile(candidate_lags, 0.5),
+            "p95": _quantile(candidate_lags, 0.95),
+            "maximum": max(candidate_lags) if candidate_lags else None,
+        },
+        "label_lag_seconds": label_lag_seconds,
+        "candidate_window_seconds": candidate_window_seconds,
         "missing_candidate_reasons": dict(missing_reasons),
         "missing_with_prior_target_value": missing_with_prior_target,
         "no_trip_update_poll_context": dict(no_trip_update_poll_context),

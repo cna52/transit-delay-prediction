@@ -25,6 +25,10 @@ run the two feeds every four minutes and rebuild reports on the configured sched
 `compose.evidence.yaml`; run `docker compose -f compose.evidence.yaml up --build -d` to restart it.
 Sleeping or powering off this computer creates real collection gaps and extends the evidence
 window. Do not combine this directory with the August sample.
+`collection.json` reports successful attempts separately from cadence coverage. Its expected
+cadence slots count scheduled four-minute opportunities between each feed's first and latest
+attempt, so a 100% fetch success rate can coexist with long intervals when the computer did not
+poll. Review both rates and the largest same-feed gap before counting a day as evidence.
 
 The worker rebuilds the full offline features when the Vancouver date changes, then refreshes
 the audit and feasibility report. After two complete audited usable dates, its first report pass

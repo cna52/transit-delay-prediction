@@ -308,7 +308,14 @@ def build_dataset(features: Path, labels: Path, config: Path | None = None) -> N
 def report_collection(config: Path | None = None) -> None:
     settings = load_settings(config)
     manifests = list((settings.data_dir / "raw" / "manifests").glob("*.jsonl"))
-    report = collection_report(manifests, settings.timezone)
+    report = collection_report(
+        manifests,
+        settings.timezone,
+        {
+            "trip_updates": settings.trip_updates_interval_seconds,
+            "vehicle_positions": settings.vehicle_positions_interval_seconds,
+        },
+    )
     output = settings.report_dir / "collection.json"
     write_report(report, output)
     typer.echo(str(output))
@@ -386,6 +393,8 @@ def route_scope_report(
     config: Path | None = None,
     min_horizon_seconds: int | None = None,
     max_horizon_seconds: int | None = None,
+    label_lag_seconds: int | None = None,
+    candidate_window_seconds: int = 1800,
 ) -> None:
     """Replay selected routes and horizon into an isolated feasibility report."""
     settings = load_settings(config)
@@ -400,6 +409,10 @@ def route_scope_report(
     )
     if minimum <= 0 or minimum >= maximum:
         raise typer.BadParameter("horizon bounds must be positive and increasing")
+    if label_lag_seconds is not None and label_lag_seconds <= 0:
+        raise typer.BadParameter("label lag must be positive")
+    if candidate_window_seconds <= 0:
+        raise typer.BadParameter("candidate window must be positive")
     manifests = sorted((settings.data_dir / "raw" / "manifests").glob("*.jsonl"))
     if not manifests:
         raise typer.BadParameter("no live manifests exist for route replay")
@@ -419,20 +432,47 @@ def route_scope_report(
         "strict_join_success_rate": stats.joined / total_joins if total_joins else None,
         "service_days": len({row.key.service_date for row in rows}),
     }
-    audit = asdict(audit_feeds(archived_feeds(manifests), rows))
-    collection = asdict(collection_report(manifests, settings.timezone))
+    audit = asdict(
+        audit_feeds(archived_feeds(manifests), rows, label_lag_seconds, candidate_window_seconds)
+    )
+    collection = asdict(
+        collection_report(
+            manifests,
+            settings.timezone,
+            {
+                "trip_updates": settings.trip_updates_interval_seconds,
+                "vehicle_positions": settings.vehicle_positions_interval_seconds,
+            },
+        )
+    )
     today = datetime.now(UTC).astimezone(ZoneInfo(settings.timezone)).date()
     decision = feasibility_gates(collection, quality, audit, today)
+    exploratory = (
+        min_horizon_seconds is not None
+        or max_horizon_seconds is not None
+        or label_lag_seconds is not None
+        or candidate_window_seconds != 1800
+    )
+    if exploratory:
+        decision["status"] = "exploratory_target"
+        decision["production_policy_eligible"] = False
     suffix = (
         f"-h{minimum}-{maximum}"
         if min_horizon_seconds is not None or max_horizon_seconds is not None
         else ""
     )
+    if label_lag_seconds is not None or candidate_window_seconds != 1800:
+        suffix += f"-lag{label_lag_seconds or 'arrival'}-w{candidate_window_seconds}"
     output = settings.report_dir / "route-scopes" / f"{'-'.join(selected)}{suffix}.json"
     write_report(
         {
             "routes": selected,
             "horizon_seconds": {"minimum": minimum, "maximum": maximum},
+            "target_probe": {
+                "label_lag_seconds": label_lag_seconds,
+                "candidate_window_seconds": candidate_window_seconds,
+                "exploratory": exploratory,
+            },
             "processing": asdict(stats),
             "quality": quality,
             "audit": audit,

@@ -65,6 +65,17 @@ def test_audit_candidate_must_arrive_within_30_minutes() -> None:
     assert late_only["missing_candidate_reasons"] == {"no_trip_update_in_window": 1}
     assert late_only["no_trip_update_poll_context"] == {"feed_poll_gap": 1}
     assert late_only["by_service_date"]["2026-08-10"]["examples"] == 1
+    early = target - timedelta(minutes=7)
+    probe = audit_feeds(
+        [(feed, early), (feed, too_late)],
+        [feature],
+        label_lag_seconds=300,
+        candidate_window_seconds=240,
+    ).label_semantics
+    assert probe["candidate_labels"] == 1
+    assert probe["label_lag_seconds"] == 300
+    assert probe["candidate_window_seconds"] == 240
+    assert probe["candidate_observation_lag_seconds"]["p50"] == 300
     other_trip = ParsedFeed(target, None, (replace(trip, trip_id="t2"),), ())
     trip_disappeared = audit_feeds(
         [(feed, target - timedelta(seconds=1)), (other_trip, within), (other_trip, too_late)],

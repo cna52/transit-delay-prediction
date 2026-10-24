@@ -54,6 +54,12 @@ An exploratory shorter-horizon replay can use
 The report is isolated under `route-scopes/` and does not change the approved 10–15-minute target,
 the live service, or its gate. A shorter horizon is a different prediction question and needs a
 new policy decision before evaluation.
+To inspect a fixed future reporting lag, add `--label-lag-seconds 300` and
+`--candidate-window-seconds 480` to the route replay. This asks whether the previously selected
+target stop has a reported delay value 5–13 minutes after prediction. The replay records the
+actual candidate observation lag and marks its decision `exploratory_target`; it cannot approve
+a production label policy. The original target and its 30-minute candidate window remain the
+production audit until a new protocol is reviewed and locked.
 
 The feasibility report explains missing candidates as no trip update during the window, a trip
 update without the target stop, or a target stop without an arrival value. It further separates
