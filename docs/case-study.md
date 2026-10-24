@@ -60,6 +60,22 @@ p95. Every response used the persistence fallback because no model has been prom
 an approved delayed label, so the probe cannot report prediction MAE. This is baseline serving
 evidence and does not count toward the seven subsequent monitoring days.
 
+## Label coverage diagnosis
+
+At the 2026-10-23 22:33 Vancouver audit, 521 of 2,321 mature examples had a target-stop value in
+the 30-minute candidate window: 22.4% coverage. Of the 1,800 misses, 355 had no Trip Updates
+poll in that window, 344 had polls but no update for the trip, 1,099 had a trip update without the
+target stop, and two had the stop without an arrival value. A target value had been present before
+the window in 1,727 misses. Excluding only windows with no feed poll raises coverage to 26.5%,
+still far below the 70% gate. This points to short target-stop retention and trip disappearance as
+well as collection gaps; it does not establish why the producer drops each update.
+
+The isolated R5 replay had 118 candidates among 380 mature examples (31.1%), or 35.6% after
+excluding its 49 windows without a feed poll. It also fails the gate. By *feature service date*,
+the brief October 22 slice reached 58.7% across 184 examples and the ongoing October 23 date
+reached 19.3% across 2,137. Neither is a two-complete-day result. The retained
+`feasibility.json` and `route-scopes/R5.json` reports hold these counts.
+
 ## Reproduce and inspect
 
 ```bash

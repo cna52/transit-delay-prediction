@@ -1,5 +1,6 @@
 import json
 import subprocess
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -59,11 +60,49 @@ def test_audit_candidate_must_arrive_within_30_minutes() -> None:
         ]
         == 1
     )
-    assert audit_feeds([(feed, too_late)], [feature]).label_semantics["candidate_labels"] == 0
+    late_only = audit_feeds([(feed, too_late)], [feature]).label_semantics
+    assert late_only["candidate_labels"] == 0
+    assert late_only["missing_candidate_reasons"] == {"no_trip_update_in_window": 1}
+    assert late_only["no_trip_update_poll_context"] == {"feed_poll_gap": 1}
+    assert late_only["by_service_date"]["2026-08-10"]["examples"] == 1
+    other_trip = ParsedFeed(target, None, (replace(trip, trip_id="t2"),), ())
+    trip_disappeared = audit_feeds(
+        [(feed, target - timedelta(seconds=1)), (other_trip, within), (other_trip, too_late)],
+        [feature],
+    ).label_semantics
+    assert trip_disappeared["no_trip_update_poll_context"] == {"feed_polled_trip_absent": 1}
+    missing_stop = ParsedFeed(target, None, (replace(trip, stops=()),), ())
+    missing_value = ParsedFeed(
+        target,
+        None,
+        (replace(trip, stops=(replace(stop, arrival_time=None, arrival_delay_seconds=None),)),),
+        (),
+    )
+    for missing_feed, reason in [
+        (missing_stop, "target_stop_absent_in_window"),
+        (missing_value, "target_value_absent_in_window"),
+    ]:
+        result = audit_feeds(
+            [
+                (feed, target - timedelta(seconds=1)),
+                (missing_feed, within),
+                (missing_feed, too_late),
+            ],
+            [feature],
+        )
+        assert result.label_semantics["missing_candidate_reasons"] == {reason: 1}
+        assert result.label_semantics["missing_with_prior_target_value"] == 1
     sample = trip_timeline_samples([(feed, within)], [feature])[0]
     assert sample["trip_update_count"] == 1
     assert sample["target_history"][0]["within_candidate_window"] is True
     assert sample["review_status"] == "pending"
+    later_feature = replace(
+        feature,
+        example_id="e2",
+        key=TripInstanceKey("v1", date(2026, 8, 11), "t2"),
+    )
+    scoped = trip_timeline_samples([], [feature, later_feature], service_dates={"2026-08-11"})
+    assert [row["trip_key"] for row in scoped] == [later_feature.key.stable_id()]
 
 
 def test_locked_train_rejects_short_window(tmp_path) -> None:

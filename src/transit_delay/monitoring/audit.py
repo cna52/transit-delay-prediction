@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import json
+from bisect import bisect_left, bisect_right
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
@@ -71,11 +72,14 @@ def audit_feeds(
     timelines: dict[str, list[tuple[datetime, Any]]] = {}
     position_timelines: dict[str, list[tuple[datetime, Any]]] = {}
     latest_trip_at: datetime | None = None
+    trip_poll_times: list[datetime] = []
     for feed, received_at in feeds:
         snapshots += 1
         freshness.append(max(0.0, (received_at - feed.feed_timestamp).total_seconds()))
         if feed.trips and (latest_trip_at is None or received_at > latest_trip_at):
             latest_trip_at = received_at
+        if feed.trips:
+            trip_poll_times.append(received_at)
         for trip in feed.trips:
             trips += 1
             relationships[trip.relationship] += 1
@@ -114,7 +118,9 @@ def audit_feeds(
             "max": max(freshness) if freshness else None,
         },
         dict(relationships),
-        _label_semantics(timelines, position_timelines, latest_trip_at, feature_list),
+        _label_semantics(
+            timelines, position_timelines, latest_trip_at, trip_poll_times, feature_list
+        ),
     )
 
 
@@ -122,24 +128,39 @@ def _label_semantics(
     timelines: dict[str, list[tuple[datetime, Any]]],
     positions: dict[str, list[tuple[datetime, Any]]],
     latest_received_at: datetime | None,
+    trip_poll_times: list[datetime],
     features: list[FeatureRow],
 ) -> dict[str, object] | None:
     if not features:
         return None
     for timeline_values in (*timelines.values(), *positions.values()):
         timeline_values.sort(key=lambda item: item[0])
+    trip_poll_times.sort()
     candidates = post_passage = retained = revised = position_confirmed = joint_confirmed = 0
     pending = 0
     routes: dict[str, Counter[str]] = {}
+    service_dates: dict[str, Counter[str]] = {}
+    missing_reasons: Counter[str] = Counter()
+    missing_with_prior_target = 0
+    no_trip_update_poll_context: Counter[str] = Counter()
     sampled_trip_ids: set[str] = set()
     for feature in features:
         sampled_trip_ids.add(feature.key.trip_id)
         label_time = feature.as_of + timedelta(seconds=feature.horizon_seconds)
         deadline = label_time + timedelta(minutes=30)
+        group_counts = (
+            routes.setdefault(feature.route_short_name, Counter()),
+            service_dates.setdefault(feature.key.service_date.isoformat(), Counter()),
+        )
         if latest_received_at is None or latest_received_at < deadline:
             pending += 1
+            for counts in group_counts:
+                counts["pending"] += 1
             continue
         target_values: list[tuple[datetime, datetime | None, int | None]] = []
+        saw_trip_update = False
+        saw_target_stop = False
+        prior_target_value = False
         for received_at, update in timelines.get(feature.key.trip_id, []):
             if update.start_date and update.start_date != feature.key.service_date.strftime(
                 "%Y%m%d"
@@ -147,27 +168,61 @@ def _label_semantics(
                 continue
             if feature.key.start_time and update.start_time != feature.key.start_time:
                 continue
-            if not (label_time <= received_at <= deadline):
+            if not (feature.as_of <= received_at <= deadline):
                 continue
+            in_window = received_at >= label_time
+            if in_window:
+                saw_trip_update = True
             for stop in update.stops:
                 if stop.stop_sequence == feature.target_stop_sequence or (
                     stop.stop_sequence is None and stop.stop_id == feature.target_stop_id
                 ):
-                    if stop.arrival_time is not None or stop.arrival_delay_seconds is not None:
+                    has_value = (
+                        stop.arrival_time is not None or stop.arrival_delay_seconds is not None
+                    )
+                    if in_window:
+                        saw_target_stop = True
+                    elif has_value:
+                        prior_target_value = True
+                    if in_window and has_value:
                         target_values.append(
                             (received_at, stop.arrival_time, stop.arrival_delay_seconds)
                         )
                     break
-        route_counts = routes.setdefault(feature.route_short_name, Counter())
-        route_counts["examples"] += 1
+        for counts in group_counts:
+            counts["examples"] += 1
         if not target_values:
+            reason = (
+                "no_trip_update_in_window"
+                if not saw_trip_update
+                else "target_stop_absent_in_window"
+                if not saw_target_stop
+                else "target_value_absent_in_window"
+            )
+            missing_reasons[reason] += 1
+            for counts in group_counts:
+                counts[reason] += 1
+            if reason == "no_trip_update_in_window":
+                polls = bisect_right(trip_poll_times, deadline) - bisect_left(
+                    trip_poll_times, label_time
+                )
+                poll_context = "feed_poll_gap" if polls == 0 else "feed_polled_trip_absent"
+                no_trip_update_poll_context[poll_context] += 1
+                for counts in group_counts:
+                    counts[poll_context] += 1
+            if prior_target_value:
+                missing_with_prior_target += 1
+                for counts in group_counts:
+                    counts["missing_with_prior_target"] += 1
             continue
         candidates += 1
-        route_counts["candidates"] += 1
+        for counts in group_counts:
+            counts["candidates"] += 1
         past_values = [value for value in target_values if value[1] and value[1] <= value[0]]
         if past_values:
             post_passage += 1
-            route_counts["post_passage"] += 1
+            for counts in group_counts:
+                counts["post_passage"] += 1
         if len(past_values) >= 2:
             retained += 1
         delay_values = {value[2] for value in target_values if value[2] is not None}
@@ -194,6 +249,9 @@ def _label_semantics(
         "trip_timelines": len(sampled_trip_ids),
         "candidate_labels": candidates,
         "candidate_coverage": candidates / total if total else 0.0,
+        "missing_candidate_reasons": dict(missing_reasons),
+        "missing_with_prior_target_value": missing_with_prior_target,
+        "no_trip_update_poll_context": dict(no_trip_update_poll_context),
         "post_passage_candidates": post_passage,
         "post_passage_retained_twice": retained,
         "revised_target_predictions": revised,
@@ -202,9 +260,20 @@ def _label_semantics(
         "by_route": {
             route: {
                 **dict(counts),
-                "candidate_coverage": counts["candidates"] / counts["examples"],
+                "candidate_coverage": counts["candidates"] / counts["examples"]
+                if counts["examples"]
+                else 0.0,
             }
             for route, counts in routes.items()
+        },
+        "by_service_date": {
+            day: {
+                **dict(counts),
+                "candidate_coverage": counts["candidates"] / counts["examples"]
+                if counts["examples"]
+                else 0.0,
+            }
+            for day, counts in service_dates.items()
         },
         "measured_arrival_automatically_approved": False,
         "decision": "manual_review_required",
@@ -215,6 +284,7 @@ def trip_timeline_samples(
     feeds: Iterable[tuple[ParsedFeed, datetime]],
     features: Iterable[FeatureRow],
     limit: int = 10,
+    service_dates: set[str] | None = None,
 ) -> list[dict[str, object]]:
     """Retain route/day-balanced trip evidence for the required human review."""
     if limit < 1:
@@ -222,6 +292,8 @@ def trip_timeline_samples(
     groups: dict[tuple[str, str], list[FeatureRow]] = {}
     seen: set[str] = set()
     for row in sorted(features, key=lambda value: value.as_of):
+        if service_dates is not None and row.key.service_date.isoformat() not in service_dates:
+            continue
         key = row.key.stable_id()
         if key in seen:
             continue

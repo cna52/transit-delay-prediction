@@ -206,7 +206,12 @@ def create_label_policy(
         raise typer.BadParameter("strict Static join success rate must be at least 90%")
     today = datetime.now(UTC).astimezone(ZoneInfo(settings.timezone)).date().isoformat()
     complete_dates = [day for day in collection.get("usable_service_dates", []) if day < today]
-    if len(complete_dates) < 2 or int(quality.get("service_days", 0)) < 2:
+    audited_dates = [
+        day
+        for day, values in (semantics.get("by_service_date") or {}).items()
+        if day in complete_dates and int(values.get("examples") or 0) > 0
+    ]
+    if len(audited_dates) < 2 or int(quality.get("service_days", 0)) < 2:
         raise typer.BadParameter("label audit requires at least two usable service days")
     if int(semantics.get("examples_checked", 0)) < 100:
         raise typer.BadParameter("label audit requires at least 100 eligible examples")
@@ -340,10 +345,15 @@ def trip_timelines(config: Path | None = None, limit: int = 10) -> None:
     frozen.parent.mkdir(parents=True, exist_ok=True)
     if not frozen.exists():
         frozen.write_bytes(audit_path.read_bytes())
+    collection_path = settings.report_dir / "collection.json"
+    collection = json.loads(collection_path.read_text()) if collection_path.exists() else {}
+    today = datetime.now(UTC).astimezone(ZoneInfo(settings.timezone)).date().isoformat()
+    complete_dates = {day for day in collection.get("usable_service_dates", []) if day < today}
     samples = trip_timeline_samples(
         archived_feeds((settings.data_dir / "raw" / "manifests").glob("*.jsonl")),
         _audit_features(settings),
         limit,
+        complete_dates if len(complete_dates) >= 2 else None,
     )
     output = settings.report_dir / "trip-timelines.json"
     write_report({"audit_sha256": digest, "sample_count": len(samples), "samples": samples}, output)

@@ -26,10 +26,13 @@ engineering gates, not achieved claims.
 Run `transit-delay feed-audit` and `transit-delay trip-timelines --config configs/evidence.yaml`.
 Run `transit-delay feasibility-report --config configs/evidence.yaml` after refreshing the
 collection and dataset-quality reports. It marks each gate, counts only complete Vancouver days,
-and names routes worth a scoped replay if the all-route candidate rate fails. A route suggestion
+requires feature examples from two of those dates in the frozen audit, and names routes worth a
+scoped replay if the all-route candidate rate fails. A route suggestion
 is provisional until its own strict Static join rate and manual timelines are checked.
 The timeline report samples ten distinct trips across available routes and service dates for
-manual review. Candidate coverage includes only examples whose full 30-minute window has elapsed;
+manual review. Once two complete usable dates exist, it samples from those dates so the required
+review cannot be filled with trips from a partial startup date. Candidate coverage includes only
+examples whose full 30-minute window has elapsed;
 newer examples appear as pending. Create a label policy only after the gates and manual review
 pass. Copy the generated timeline report to `trip-timelines-reviewed.json`, mark ten distinct
 trips from both days as `reviewed`, and record a substantive `review_notes` entry for each. The
@@ -46,6 +49,13 @@ sparse or unstable, run `transit-delay route-scope-report 099 --config configs/e
 for a recommended route. This replay writes a separate report and leaves live serving data
 untouched. Narrow the active configuration only if the scoped join and label gates also pass. If strict Static joins or
 even the proxy remain unreliable, stop or change the project rather than mislabel it.
+
+The feasibility report explains missing candidates as no trip update during the window, a trip
+update without the target stop, or a target stop without an arrival value. It further separates
+windows with no successful Trip Updates poll from windows where the feed was polled but the trip
+was absent. `candidate_coverage_when_feed_polled` is diagnostic only: the 70% gate still uses all
+mature examples. `by_service_date` shows coverage by the feature's GTFS service date, which can
+cross a local midnight.
 
 The initial live sample does not establish feasibility: it contains too few examples and no
 confirmed retained post-passage updates. That is a current finding, not a permanent conclusion

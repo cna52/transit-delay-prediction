@@ -67,6 +67,10 @@ def test_cli_archives_the_exact_audit_behind_a_label_policy(tmp_path) -> None:
                 "label_semantics": {
                     "examples_checked": 100,
                     "candidate_coverage": 0.8,
+                    "by_service_date": {
+                        "2026-08-10": {"examples": 50},
+                        "2026-08-11": {"examples": 50},
+                    },
                     "post_passage_retained_twice": 0,
                     "vehicle_position_confirmed": 0,
                 }
@@ -125,6 +129,10 @@ def test_cli_archives_the_exact_audit_behind_a_label_policy(tmp_path) -> None:
                 "label_semantics": {
                     "examples_checked": 100,
                     "candidate_coverage": 0.8,
+                    "by_service_date": {
+                        "2026-08-10": {"examples": 50},
+                        "2026-08-11": {"examples": 50},
+                    },
                     "post_passage_retained_twice": 10,
                     "vehicle_position_confirmed": 10,
                     "retained_and_position_confirmed": 0,
