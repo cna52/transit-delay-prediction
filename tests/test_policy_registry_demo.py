@@ -156,6 +156,17 @@ def test_cli_archives_the_exact_audit_behind_a_label_policy(tmp_path) -> None:
     assert measured.exit_code != 0
     assert "measured-arrival policy requires" in measured.output
 
+    exploratory_value = json.loads(audit.read_text())
+    exploratory_value["label_semantics"]["label_lag_seconds"] = 300
+    exploratory_value["label_semantics"]["candidate_window_seconds"] = 480
+    audit.write_text(json.dumps(exploratory_value))
+    audit_digest = hashlib.sha256(audit.read_bytes()).hexdigest()
+    (frozen_dir / f"{audit_digest}.json").write_bytes(audit.read_bytes())
+    review.write_text(json.dumps({"audit_sha256": audit_digest, "samples": samples}))
+    exploratory = CliRunner().invoke(app, ["create-label-policy", "--config", str(config)])
+    assert exploratory.exit_code != 0
+    assert "exploratory target cannot use the current label policy" in exploratory.output
+
 
 def test_synthetic_demo_is_deterministic_and_explicit(tmp_path) -> None:
     data = tmp_path / "data"

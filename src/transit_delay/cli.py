@@ -194,6 +194,14 @@ def create_label_policy(
         raise typer.BadParameter("run feed-audit and trip-timelines before creating a label policy")
     audit_value = json.loads(audit.read_text())
     semantics = audit_value.get("label_semantics") or {}
+    if (
+        semantics.get("label_lag_seconds") is not None
+        or int(semantics.get("candidate_window_seconds", 1800)) != 1800
+    ):
+        raise typer.BadParameter(
+            "exploratory target cannot use the current label policy; "
+            "define and review a new protocol"
+        )
     quality_path = settings.report_dir / "dataset-quality.json"
     collection_path = settings.report_dir / "collection.json"
     if not quality_path.exists() or not collection_path.exists():
