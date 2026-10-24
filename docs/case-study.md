@@ -54,6 +54,12 @@ changing reported delays in their captured histories, and none of these sampled 
 contained a cancellation. These are observations from the retained timeline sample, not the
 required review of two complete usable days. Its review statuses remain pending.
 
+The October 23 serving probe recorded 71 live requests with no request errors. Latency was
+1.154 ms at p50 and 3.75 ms at p95; input freshness was 169 seconds at p50 and 287 seconds at
+p95. Every response used the persistence fallback because no model has been promoted. None has
+an approved delayed label, so the probe cannot report prediction MAE. This is baseline serving
+evidence and does not count toward the seven subsequent monitoring days.
+
 ## Reproduce and inspect
 
 ```bash
