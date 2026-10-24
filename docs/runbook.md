@@ -25,6 +25,12 @@ run the two feeds every four minutes and rebuild reports on the configured sched
 `compose.evidence.yaml`; run `docker compose -f compose.evidence.yaml up --build -d` to restart it.
 Sleeping or powering off this computer creates real collection gaps and extends the evidence
 window. Do not combine this directory with the August sample.
+The `com.cna52.transit-delay.ac-awake` LaunchAgent runs `/usr/bin/caffeinate -s` while this
+evidence collection is active. macOS applies that system-sleep assertion only on AC power; the
+display can still sleep. The plist is in `ops/` and installed in `~/Library/LaunchAgents/`.
+Verify it with `launchctl list | grep com.cna52.transit-delay.ac-awake` and
+`pmset -g assertions`. To stop holding the assertion after collection, run
+`launchctl bootout gui/$(id -u)/com.cna52.transit-delay.ac-awake` and remove its installed plist.
 `collection.json` reports successful attempts separately from cadence coverage. Its expected
 cadence slots count scheduled four-minute opportunities between each feed's first and latest
 attempt, so a 100% fetch success rate can coexist with long intervals when the computer did not
