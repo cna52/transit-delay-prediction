@@ -233,14 +233,30 @@ def trip_timeline_samples(
             if groups[group] and len(chosen) < limit:
                 chosen.append(groups[group].pop(0))
 
+    relevant_days: dict[str, set[str]] = {}
+    for row in chosen:
+        relevant_days.setdefault(row.key.trip_id, set()).add(
+            row.key.service_date.strftime("%Y%m%d")
+        )
     updates: dict[str, list[tuple[datetime, Any]]] = {}
     positions: dict[str, list[tuple[datetime, Any]]] = {}
     for feed, received_at in feeds:
         for update in feed.trips:
-            if update.trip_id:
+            if (
+                update.trip_id
+                and update.trip_id in relevant_days
+                and (not update.start_date or update.start_date in relevant_days[update.trip_id])
+            ):
                 updates.setdefault(update.trip_id, []).append((received_at, update))
         for position in feed.positions:
-            if position.trip_id:
+            if (
+                position.trip_id
+                and position.trip_id in relevant_days
+                and (
+                    not position.start_date
+                    or position.start_date in relevant_days[position.trip_id]
+                )
+            ):
                 positions.setdefault(position.trip_id, []).append((received_at, position))
 
     samples: list[dict[str, object]] = []

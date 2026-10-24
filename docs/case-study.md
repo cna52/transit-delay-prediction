@@ -47,6 +47,13 @@ October 22 start did not qualify as a usable day. These measurements fail the 70
 far. A second complete usable day and the final ten-trip review are still required before any
 target decision. No model MAE can be reported from this window yet.
 
+A refreshed ten-trip diagnostic at 22:22 sampled ten distinct trips across routes 049, 099, R4,
+and R5 and both observed local dates. Six had a target update in the candidate window; three had
+an update after the reported passage time; six had a position that passed the target. All ten had
+changing reported delays in their captured histories, and none of these sampled trip histories
+contained a cancellation. These are observations from the retained timeline sample, not the
+required review of two complete usable days. Its review statuses remain pending.
+
 ## Reproduce and inspect
 
 ```bash
