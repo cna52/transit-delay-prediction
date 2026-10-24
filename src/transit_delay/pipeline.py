@@ -88,9 +88,9 @@ class SnapshotProcessor:
 
 
 def process_manifest(
-    manifest_paths: Iterable[Path], processor: SnapshotProcessor
+    manifest_paths: Iterable[Path], processor: SnapshotProcessor, since: datetime | None = None
 ) -> tuple[list[FeatureRow], ProcessingStats]:
-    return _process_manifest(manifest_paths, lambda _received_at: processor)
+    return _process_manifest(manifest_paths, lambda _received_at: processor, since)
 
 
 def process_manifest_with_registry(
@@ -98,9 +98,10 @@ def process_manifest_with_registry(
     registry: StaticFeedRegistry,
     selected_routes: set[str],
     feature_builder: FeatureBuilder,
+    since: datetime | None = None,
 ) -> tuple[list[FeatureRow], ProcessingStats]:
     routed = RegistrySnapshotProcessor(registry, selected_routes, feature_builder)
-    return _process_manifest(manifest_paths, lambda _received_at: routed)
+    return _process_manifest(manifest_paths, lambda _received_at: routed, since)
 
 
 class RegistrySnapshotProcessor:
@@ -153,6 +154,7 @@ class RegistrySnapshotProcessor:
 def _process_manifest(
     manifest_paths: Iterable[Path],
     processor_for: Callable[[datetime], FeedProcessor],
+    since: datetime | None = None,
 ) -> tuple[list[FeatureRow], ProcessingStats]:
     rows: list[FeatureRow] = []
     values = asdict(ProcessingStats())
@@ -162,6 +164,9 @@ def _process_manifest(
             record = json.loads(line)
             if record["feed_type"] != "trip_updates" or not record.get("payload_path"):
                 continue
+            received_at = datetime.fromisoformat(record["received_at"])
+            if since is not None and received_at < since:
+                continue
             values["snapshots"] += 1
             try:
                 with gzip.open(record["payload_path"], "rb") as stream:
@@ -169,7 +174,6 @@ def _process_manifest(
             except Exception:
                 values["parse_failures"] += 1
                 continue
-            received_at = datetime.fromisoformat(record["received_at"])
             try:
                 processor = processor_for(received_at)
             except LookupError:

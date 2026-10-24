@@ -34,6 +34,9 @@ pass `--start-date YYYY-MM-DD --end-date YYYY-MM-DD` to retain a separate seven-
 the subsequent monitoring window. Earlier probes are baseline diagnostics and do not count toward
 that seven-day window.
 
+Serving refreshes replay the latest hour of Trip Updates for low latency. The daily offline
+rebuild, feed audit, and evaluation still read the full immutable archive.
+
 For a durable offline demo, run `transit-delay seed-demo` and serve `configs/replay.yaml`. API
 responses identify replay/synthetic mode; those rows must not be included in live reliability or
 model claims.

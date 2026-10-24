@@ -9,6 +9,7 @@ example_cooldown_seconds: 300
 max_feature_age_seconds: 300
 label_wait_seconds: 1800
 serving_refresh_interval_seconds: 900
+serving_window_seconds: 3600
 reporting_interval_seconds: 3600
 offline_rebuild_interval_seconds: 86400
 static_refresh_interval_seconds: 86400

@@ -39,6 +39,14 @@ corrected audit marks all 47 feature examples pending until each full 30-minute 
 This is an early diagnostic, not the required two-day review or a coverage result. The detailed
 sample is retained in the ignored `trip-timelines.json` report.
 
+At the 2026-10-23 22:18 Vancouver check, the retained reports showed 310 successful polls out of
+310 attempts, with a largest same-feed gap of about 83 minutes. The offline rebuild had 2,336
+feature rows, 2,299 matured examples, and a 98.4% strict Static join rate. Candidate coverage was
+22.7% overall; the highest route, R5, was 31.4%. The date was still in progress and the brief
+October 22 start did not qualify as a usable day. These measurements fail the 70% label gate so
+far. A second complete usable day and the final ten-trip review are still required before any
+target decision. No model MAE can be reported from this window yet.
+
 ## Reproduce and inspect
 
 ```bash

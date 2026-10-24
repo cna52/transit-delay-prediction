@@ -7,7 +7,7 @@ import time
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -62,6 +62,19 @@ def _manifests(settings: Settings, recent: bool = False) -> list[Path]:
     return paths[-2:] if recent else paths
 
 
+def _serving_since(manifests: list[Path], window_seconds: int) -> datetime | None:
+    latest: datetime | None = None
+    for manifest in manifests:
+        for line in manifest.read_text().splitlines():
+            record = json.loads(line)
+            if record.get("feed_type") != "trip_updates" or not record.get("payload_path"):
+                continue
+            received_at = datetime.fromisoformat(record["received_at"])
+            if latest is None or received_at > latest:
+                latest = received_at
+    return latest - timedelta(seconds=window_seconds) if latest else None
+
+
 def _write_features(path: Path, rows: Sequence[FeatureRow]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")
@@ -75,8 +88,9 @@ def build_features(settings: Settings, *, recent: bool) -> tuple[Path, Processin
     registry = bootstrap_registry(settings)
     if not registry.records():
         raise RuntimeError("no registered Static GTFS feed; run download-static first")
+    manifests = _manifests(settings, recent)
     rows, stats = process_manifest_with_registry(
-        _manifests(settings, recent),
+        manifests,
         registry,
         set(settings.selected_routes),
         FeatureBuilder(
@@ -85,6 +99,7 @@ def build_features(settings: Settings, *, recent: bool) -> tuple[Path, Processin
             settings.example_cooldown_seconds,
             settings.timezone,
         ),
+        since=_serving_since(manifests, settings.serving_window_seconds) if recent else None,
     )
     output = (
         settings.data_dir / "serving" / "latest_features.jsonl"

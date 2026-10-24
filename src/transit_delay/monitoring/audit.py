@@ -288,6 +288,7 @@ def trip_timeline_samples(
                 "example_id": row.example_id,
                 "route": row.route_short_name,
                 "as_of": row.as_of.isoformat(),
+                "feature_source_age_seconds": row.source_age_seconds,
                 "scheduled_target_arrival": row.scheduled_target_arrival.isoformat(),
                 "label_time": label_time.isoformat(),
                 "candidate_deadline": deadline.isoformat(),
@@ -301,6 +302,15 @@ def trip_timeline_samples(
                     and position.current_stop_sequence >= row.target_stop_sequence
                     for _, position in position_updates
                 ),
+                "position_history": [
+                    {
+                        "received_at": received_at.isoformat(),
+                        "current_stop_sequence": position.current_stop_sequence,
+                        "stop_id": position.stop_id,
+                        "status": position.status,
+                    }
+                    for received_at, position in position_updates
+                ],
                 "target_history": target_history,
                 "review_status": "pending",
                 "review_notes": "",

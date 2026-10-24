@@ -19,6 +19,7 @@ class Settings:
     max_feature_age_seconds: int = 300
     label_wait_seconds: int = 1800
     serving_refresh_interval_seconds: int = 900
+    serving_window_seconds: int = 3600
     reporting_interval_seconds: int = 3600
     offline_rebuild_interval_seconds: int = 86400
     static_refresh_interval_seconds: int = 86400
@@ -43,6 +44,8 @@ class Settings:
             )
         if self.target_horizon_min_seconds >= self.target_horizon_max_seconds:
             raise ValueError("target horizon minimum must be below maximum")
+        if self.serving_window_seconds <= 0:
+            raise ValueError("serving window must be positive")
         if self.data_mode not in {"live", "replay", "synthetic"}:
             raise ValueError("data_mode must be live, replay, or synthetic")
 

@@ -13,7 +13,7 @@ from transit_delay.gtfs.registry import StaticFeedRegistry
 from transit_delay.ingestion.archive import ImmutableArchive
 from transit_delay.monitoring.audit import audit_feeds
 from transit_delay.monitoring.evidence import build_portfolio_summary
-from transit_delay.worker import Worker, refresh_reports
+from transit_delay.worker import Worker, build_features, refresh_reports
 
 
 def test_worker_builds_atomic_snapshot_heartbeat_and_reports(tmp_path) -> None:
@@ -57,3 +57,22 @@ def test_worker_builds_atomic_snapshot_heartbeat_and_reports(tmp_path) -> None:
     scoped_report = json.loads((reports / "route-scopes/099.json").read_text())
     assert scoped_report["routes"] == ["099"]
     assert scoped_report["processing"]["joined"] >= 1
+
+
+def test_serving_replays_only_the_recent_window(tmp_path) -> None:
+    data = tmp_path / "data"
+    static = data / "raw/static/static.zip"
+    static.parent.mkdir(parents=True)
+    write_static_fixture(static)
+    received = datetime(2026, 8, 11, 7, 2, tzinfo=UTC)
+    StaticFeedRegistry(data / "processed/static/registry.json").register(
+        static, received - timedelta(days=1)
+    )
+    archive = ImmutableArchive(data)
+    for at in (received, received + timedelta(hours=2)):
+        archive.store("trip_updates", realtime_payload(), at, at, 200, 5)
+    settings = Settings(data_dir=data, selected_routes=("099",), serving_window_seconds=3600)
+    _, recent = build_features(settings, recent=True)
+    _, offline = build_features(settings, recent=False)
+    assert recent.snapshots == 1
+    assert offline.snapshots == 2
