@@ -3,3 +3,4 @@ artifact_dir: /var/lib/transit-delay/artifacts
 report_dir: /var/lib/transit-delay/reports
 log_level: INFO
 data_mode: live
+selected_routes: [R5]
