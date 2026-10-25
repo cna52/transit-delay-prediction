@@ -177,3 +177,16 @@ frozen audit, reviewed timelines, route scope, five-minute lag, and eight-minute
 window. This target change resets the scope of subsequent model claims to R5 alone. Model MAE,
 promotion, and online accuracy remain unavailable until enough complete labelled days have
 accrued and the locked chronological evaluation has run.
+
+The policy was created after the evaluation and policy code commit `5e86564`; the R5 Docker
+configuration and public documentation are pushed through `a59beb3`. Its version is
+`label-reported-delay-state-fixed-lag-a66765a09644`. The first R5-only worker rebuild produced
+immutable dataset `ds-4456716f433f`: 1,299 examples, 1,034 labelled and 265 censored across all
+observed dates, including partial October 22 and 25. A DuckDB query grouped by Vancouver local
+prediction date reproduces the frozen complete-day counts: October 23 has 233/425 labels
+(54.8%) and October 24 has 639/698 (91.5%). No labelled row has an availability timestamp
+outside the policy's 300–780-second window, and no feature has negative source age. The API
+health and readiness endpoints respond, and a live R5 request returned `persistence-v1` with
+`fallback_reason=no_promoted_model`. These are dataset and serving checks, not accuracy results.
+As of the morning of October 25, two of the required 28 complete usable service days are
+available. The seven-day post-evaluation monitoring window has not started.

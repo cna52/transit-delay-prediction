@@ -12,6 +12,8 @@ def test_feasibility_uses_only_complete_local_days_for_gates_and_routes() -> Non
             "pending_examples": 40,
             "candidate_labels": 196,
             "candidate_coverage": 196 / 250,
+            "candidate_window_seconds": 480,
+            "label_lag_seconds": 300,
             "missing_candidate_reasons": {"no_trip_update_in_window": 20},
             "no_trip_update_poll_context": {"feed_poll_gap": 20},
             "missing_with_prior_target_value": 15,
@@ -36,7 +38,9 @@ def test_feasibility_uses_only_complete_local_days_for_gates_and_routes() -> Non
     report = feasibility_gates(collection, quality, audit, date(2026, 10, 24))
     assert report["status"] == "route_scope_review_required"
     assert report["route_candidates_for_replay"] == ["099"]
-    assert report["gates"]["candidate_coverage_within_30m"] is False
+    assert report["gates"]["candidate_coverage_in_window"] is False
+    assert report["candidate_window_seconds"] == 480
+    assert report["label_lag_seconds"] == 300
     assert report["audited_complete_dates"] == ["2026-10-22", "2026-10-23"]
     assert report["gate_mature_examples"] == 150
     assert report["gate_candidate_coverage"] == 96 / 150

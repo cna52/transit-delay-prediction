@@ -48,7 +48,7 @@ def feasibility_gates(
         "two_complete_usable_days": len(audited_complete_dates) >= 2,
         "one_hundred_mature_examples": gate_examples >= 100,
         "strict_unique_static_joins": join_rate >= 0.9,
-        "candidate_coverage_within_30m": gate_coverage is not None and gate_coverage >= 0.7,
+        "candidate_coverage_in_window": gate_coverage is not None and gate_coverage >= 0.7,
     }
     route_candidates = sorted(
         route
@@ -75,6 +75,8 @@ def feasibility_gates(
         "gate_mature_examples": gate_examples,
         "gate_candidate_labels": gate_candidates,
         "gate_candidate_coverage": gate_coverage,
+        "candidate_window_seconds": int(semantics.get("candidate_window_seconds") or 1800),
+        "label_lag_seconds": semantics.get("label_lag_seconds"),
         "pending_examples": int(semantics.get("pending_examples") or 0),
         "candidate_coverage": coverage,
         "candidate_coverage_when_feed_polled": candidates / windows_with_poll
