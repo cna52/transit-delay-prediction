@@ -123,3 +123,49 @@ def test_reported_delay_state_policy_can_label_a_future_target_estimate() -> Non
     assert outcome.status == "labelled"
     assert outcome.label_minutes == 5
     assert outcome.source == "reported_target_stop_delay_state"
+
+
+def test_fixed_lag_policy_labels_a_reported_future_state() -> None:
+    row = FeatureBuilder().build(observation())
+    assert row is not None
+    policy = LabelPolicy(
+        "label-fixed-lag-v1",
+        "reported_delay_state_fixed_lag",
+        "audit-hash",
+        NOW.isoformat(),
+        label_lag_seconds=300,
+        candidate_window_seconds=480,
+        routes=("R5",),
+        scope_report_sha256="scope-hash",
+    )
+    labeler = Labeler(policy)
+    assert labeler.label_time(row) == row.as_of + timedelta(minutes=5)
+    available_at = row.as_of + timedelta(minutes=8)
+    forecast_arrival = row.scheduled_target_arrival + timedelta(minutes=3)
+    update = RealtimeTripUpdate(
+        "e",
+        row.key.trip_id,
+        "r",
+        0,
+        "20260810",
+        None,
+        "SCHEDULED",
+        None,
+        available_at,
+        None,
+        (
+            RealtimeStopUpdate(
+                row.target_stop_sequence,
+                row.target_stop_id,
+                forecast_arrival,
+                180,
+                None,
+                None,
+                "SCHEDULED",
+            ),
+        ),
+    )
+    outcome = labeler.resolve(row, update, available_at)
+    assert outcome.status == "labelled"
+    assert outcome.label_minutes == 3
+    assert outcome.source == "reported_target_stop_delay_state"

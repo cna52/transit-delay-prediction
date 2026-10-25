@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from dataclasses import asdict
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import typer
@@ -177,6 +177,7 @@ def create_label_policy(
     target_type: TargetType = "reported_delay_state",
     notes: str = "",
     review: Path | None = None,
+    scope_report: Path | None = None,
 ) -> None:
     """Create a versioned policy bound to the current feed-audit report."""
     settings = load_settings(config)
@@ -194,7 +195,37 @@ def create_label_policy(
         raise typer.BadParameter("run feed-audit and trip-timelines before creating a label policy")
     audit_value = json.loads(audit.read_text())
     semantics = audit_value.get("label_semantics") or {}
-    if (
+    fixed_lag = target_type == "reported_delay_state_fixed_lag"
+    routes: tuple[str, ...] = ()
+    lag_seconds: int | None = None
+    window_seconds = 1800
+    scope_value: dict[str, Any] = {}
+    if fixed_lag:
+        if scope_report is None or not scope_report.exists():
+            raise typer.BadParameter("fixed-lag policy requires an isolated route-scope report")
+        scope_value = json.loads(scope_report.read_text())
+        routes = tuple(sorted(str(route) for route in scope_value.get("routes", [])))
+        if not routes or not set(routes) <= set(settings.selected_routes):
+            raise typer.BadParameter("route-scope report must match active selected routes")
+        if set(routes) != set(settings.selected_routes):
+            raise typer.BadParameter("active selected routes must equal the approved route scope")
+        if scope_value.get("audit") != audit_value:
+            raise typer.BadParameter("route-scope report must match the frozen audit")
+        scoped_quality = scope_value.get("quality") or {}
+        if float(scoped_quality.get("strict_join_success_rate") or 0) < 0.9:
+            raise typer.BadParameter("route-scope strict Static joins must be at least 90%")
+        lag_value = semantics.get("label_lag_seconds")
+        lag_seconds = int(lag_value) if lag_value is not None else None
+        window_seconds = int(semantics.get("candidate_window_seconds") or 0)
+        if lag_seconds is None or lag_seconds <= 0 or window_seconds <= 0:
+            raise typer.BadParameter("fixed-lag audit requires a positive lag and window")
+        if (
+            review_value.get("label_lag_seconds") != lag_seconds
+            or review_value.get("candidate_window_seconds") != window_seconds
+            or set(review_value.get("routes") or []) != set(routes)
+        ):
+            raise typer.BadParameter("timeline review must match the fixed-lag target and routes")
+    elif (
         semantics.get("label_lag_seconds") is not None
         or int(semantics.get("candidate_window_seconds", 1800)) != 1800
     ):
@@ -235,7 +266,7 @@ def create_label_policy(
         for sample in review_value.get("samples", [])
         if sample.get("review_status") == "reviewed"
         and str(sample.get("review_notes", "")).strip()
-        and str(sample.get("route")) in settings.selected_routes
+        and str(sample.get("route")) in (routes if fixed_lag else settings.selected_routes)
         and len(str(sample.get("trip_key", "")).split("|")) == 4
         and str(sample.get("local_date")) in complete_dates
     ]
@@ -251,7 +282,16 @@ def create_label_policy(
         raise typer.BadParameter(
             "measured-arrival policy requires 10 retained post-passage and vehicle-confirmed cases"
         )
-    policy = LabelPolicy.from_audit(audit, target_type, notes, review_path)
+    policy = LabelPolicy.from_audit(
+        audit,
+        target_type,
+        notes,
+        review_path,
+        label_lag_seconds=lag_seconds,
+        candidate_window_seconds=window_seconds,
+        routes=routes,
+        scope_report_path=scope_report if fixed_lag else None,
+    )
     audit_archive = settings.data_dir / "state" / "label-audits" / f"{policy.audit_sha256}.json"
     audit_archive.parent.mkdir(parents=True, exist_ok=True)
     if not audit_archive.exists():
@@ -262,7 +302,15 @@ def create_label_policy(
     if not review_archive.exists():
         review_archive.write_bytes(review_path.read_bytes())
     policy.verify_review(review_archive)
+    if fixed_lag and scope_report is not None:
+        scope_archive = (
+            settings.data_dir / "state" / "route-scopes" / f"{policy.scope_report_sha256}.json"
+        )
+        scope_archive.parent.mkdir(parents=True, exist_ok=True)
+        if not scope_archive.exists():
+            scope_archive.write_bytes(scope_report.read_bytes())
     output = settings.data_dir / "state" / "label-policy.json"
+    policy.verify_archives(settings.data_dir)
     policy.write(output)
     typer.echo(
         json.dumps(

@@ -57,9 +57,17 @@ new policy decision before evaluation.
 To inspect a fixed future reporting lag, add `--label-lag-seconds 300` and
 `--candidate-window-seconds 480` to the route replay. This asks whether the previously selected
 target stop has a reported delay value 5–13 minutes after prediction. The replay records the
-actual candidate observation lag and marks its decision `exploratory_target`; it cannot approve
-a production label policy. The original target and its 30-minute candidate window remain the
-production audit until a new protocol is reviewed and locked.
+actual candidate observation lag. A fixed-lag policy requires the frozen audit, an isolated
+route-scope report, ten reviewed trips across two complete service days, and the same gates as
+the original target. The approved route list must equal the active configuration. The policy
+archives checksums for the audit, review, and scoped report. This label is a producer-reported
+future estimate, never an observed arrival.
+
+On October 25, the original target failed at 28.1% candidate coverage across complete October
+23–24. The isolated R5 five-minute-lag replay reached 872/1,123 (77.6%), with 99.9% strict
+Static joins. Its day-level coverage was 54.8% on October 23 and 91.5% on October 24; the
+first day had many poll gaps. Ten time-spread R5 trips were reviewed. This justifies a scoped
+proxy policy for evaluation, subject to reporting missing labels and day-level reliability.
 
 The feasibility report explains missing candidates as no trip update during the window, a trip
 update without the target stop, or a target stop without an arrival value. It further separates

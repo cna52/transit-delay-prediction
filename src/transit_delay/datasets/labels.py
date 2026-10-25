@@ -23,6 +23,10 @@ class Labeler:
         return "measured_arrival" if self.audited_past_updates_are_measured else "audit_required"
 
     def label_time(self, example: FeatureRow) -> datetime:
+        if self.target_type == "reported_delay_state_fixed_lag":
+            if self.policy is None or self.policy.label_lag_seconds is None:
+                raise ValueError("fixed-lag label requires an approved policy")
+            return example.as_of + timedelta(seconds=self.policy.label_lag_seconds)
         if self.target_type == "reported_delay_state":
             return example.as_of + timedelta(seconds=example.horizon_seconds)
         return example.scheduled_target_arrival
@@ -98,7 +102,7 @@ class Labeler:
             )
         source = (
             "reported_target_stop_delay_state"
-            if self.target_type == "reported_delay_state"
+            if self.target_type in {"reported_delay_state", "reported_delay_state_fixed_lag"}
             else "audited_past_stop_update"
         )
         return LabelOutcome(

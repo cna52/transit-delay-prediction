@@ -1,4 +1,4 @@
-# Transit delay evidence trail (collection in progress)
+# Transit delay evidence trail (scoped proxy label)
 
 This is a live evidence log, not a completed model result. The baseline repository commit is
 `d15cd2f89963689354d1427f54497c1fb8aeb49a`. The new collection window began on
@@ -19,7 +19,7 @@ directory are the source of these provisional observations.
 
 ## Target and locked protocol
 
-The intended label is **reported target-stop delay state approximately 10–15 minutes later**.
+The original intended label was **reported target-stop delay state approximately 10–15 minutes later**.
 It is a producer-reported proxy; measured arrival requires separate retained post-passage and
 vehicle-position evidence. A policy can only be locked after two complete usable service days,
 100 eligible examples, 90% strict unique Static joins, 70% candidate coverage within 30 minutes,
@@ -121,9 +121,59 @@ The catalog's `dataset_versions` table retains every version and its exact Parqu
 
 ## Pending evidence
 
-The two-day trip timeline review, 28-day collection, locked split dates and MAE comparison,
-seven subsequent days of delayed prediction evaluation, and final report screenshots are pending.
+The 28-day labelled collection, locked split dates and MAE comparison, seven subsequent days of
+delayed prediction evaluation, and final report screenshots are pending.
 An unavailable computer or feed extends the collection window; gaps are recorded rather than
 filled. Replay and synthetic material are demo content and never included in live metrics.
 The serving probe records baseline behavior now; only predictions in the seven-day window after
 the locked evaluation will enter the final online result.
+
+## Two-day feasibility decision — October 25
+
+The first two complete usable Vancouver collection dates are October 23 and 24. The retained
+`feasibility.json` report, refreshed at 08:34 on October 25, has 5,774 mature examples from
+those dates, 1,621 candidate labels within 30 minutes (28.1%), and a 99.4% strict Static join
+rate. The 100-example, two-day, and join gates pass; the required 70% candidate-label gate
+fails. Route coverage is 18.8% on 049, 30.3% on 099, 31.9% on R4, and 35.3% on R5. An isolated
+R5 replay confirms 396 candidates among 1,123 mature examples and a 99.9% strict join rate.
+The current reported target-stop delay-state label is therefore a dataset limitation, and no
+label policy or model result is approved.
+
+The October 24 collection attempted 335 of 360 four-minute slots per feed (93.1%) and succeeded
+on 334 for each. Even on that better-polled date, the R5 candidate rate was only 37.7%, compared
+with 31.3% on October 23. Feed gaps contribute to missingness, but target-stop removal remains a
+major limit under reliable polling.
+
+The checksum-matched ten-trip packet covers ten distinct trips from both complete local dates
+and all four routes. The ignored `trip-timelines-reviewed.json` retains an observation for each.
+Six trips had a target value in the candidate window; one more had the target stop but no arrival
+value. Several targets disappeared after earlier estimates, while other estimates revised or
+persisted after reported passage. No sampled trip was cancelled. This review supports the audit's
+missingness diagnosis and does not establish measured arrivals.
+
+At the same reporting snapshot, 1,286 of 1,288 fetch attempts succeeded, and projected compressed
+raw storage for 56 days was about 1.96 GB. The two-day decision is limited to this collection
+window and its selected routes. Collection continues while alternative target feasibility is
+examined; the 28-day model evaluation remains gated on an approved label.
+
+## Scoped R5 proxy decision — October 25
+
+The isolated R5 replay selects a stop ten to fifteen minutes ahead at prediction time, then
+labels its **producer-reported delay state** from the first usable update received five to
+thirteen minutes later. The actual median observation lag was about eight minutes. This is a
+future reported estimate, not an observed arrival or actual delay. The original target's failed
+gate remains a separate result.
+
+Across the two complete dates, the fixed-lag replay has 872 candidates among 1,123 mature R5
+examples (77.6%) and 99.9% strict Static joins. Coverage was 54.8% on October 23 and 91.5% on
+October 24, so date-level missingness needs explicit reporting during evaluation. The reviewed
+R5 packet contains ten distinct trips, five from each date; seven have a future reported-state
+value, while three are censored after earlier target estimates. Neither the packet nor the
+aggregate rate establishes measured arrivals. The ignored `route-scopes/R5-lag300-w480.json`
+and matching reviewed timeline packet retain the exact evidence and checksums.
+
+The active evidence configuration now selects R5. A checksummed fixed-lag policy binds the
+frozen audit, reviewed timelines, route scope, five-minute lag, and eight-minute candidate
+window. This target change resets the scope of subsequent model claims to R5 alone. Model MAE,
+promotion, and online accuracy remain unavailable until enough complete labelled days have
+accrued and the locked chronological evaluation has run.

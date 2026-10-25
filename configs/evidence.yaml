@@ -6,3 +6,4 @@ vehicle_positions_interval_seconds: 240
 serving_refresh_interval_seconds: 120
 daily_request_limit: 900
 data_mode: live
+selected_routes: [R5]

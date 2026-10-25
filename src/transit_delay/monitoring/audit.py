@@ -341,10 +341,16 @@ def trip_timeline_samples(
     service_dates: set[str] | None = None,
     local_dates: set[str] | None = None,
     timezone_name: str = "America/Vancouver",
+    label_lag_seconds: int | None = None,
+    candidate_window_seconds: int = 1800,
 ) -> list[dict[str, object]]:
     """Retain route/day-balanced trip evidence for the required human review."""
     if limit < 1:
         raise ValueError("timeline sample limit must be positive")
+    if label_lag_seconds is not None and label_lag_seconds <= 0:
+        raise ValueError("label lag must be positive")
+    if candidate_window_seconds <= 0:
+        raise ValueError("candidate window must be positive")
     groups: dict[tuple[str, str], list[FeatureRow]] = {}
     seen: set[str] = set()
     timezone = ZoneInfo(timezone_name)
@@ -359,6 +365,17 @@ def trip_timeline_samples(
             continue
         seen.add(key)
         groups.setdefault((local_day, row.route_short_name), []).append(row)
+    if groups:
+        quota = max(1, (limit + len(groups) - 1) // len(groups))
+        for group, rows in groups.items():
+            selected_indices = {
+                min(len(rows) - 1, (2 * index + 1) * len(rows) // (2 * quota))
+                for index in range(min(quota, len(rows)))
+            }
+            spread = [rows[index] for index in sorted(selected_indices)]
+            groups[group] = spread + [
+                row for index, row in enumerate(rows) if index not in selected_indices
+            ]
     chosen: list[FeatureRow] = []
     while len(chosen) < limit and any(groups.values()):
         for group in sorted(groups):
@@ -394,8 +411,10 @@ def trip_timeline_samples(
     samples: list[dict[str, object]] = []
     for row in chosen:
         service_date = row.key.service_date.strftime("%Y%m%d")
-        label_time = row.as_of + timedelta(seconds=row.horizon_seconds)
-        deadline = label_time + timedelta(minutes=30)
+        label_time = row.as_of + timedelta(
+            seconds=row.horizon_seconds if label_lag_seconds is None else label_lag_seconds
+        )
+        deadline = label_time + timedelta(seconds=candidate_window_seconds)
         trip_updates = [
             (received_at, update)
             for received_at, update in updates.get(row.key.trip_id, [])
@@ -441,6 +460,8 @@ def trip_timeline_samples(
                 "scheduled_target_arrival": row.scheduled_target_arrival.isoformat(),
                 "label_time": label_time.isoformat(),
                 "candidate_deadline": deadline.isoformat(),
+                "label_lag_seconds": label_lag_seconds,
+                "candidate_window_seconds": candidate_window_seconds,
                 "trip_update_count": len(trip_updates),
                 "vehicle_position_count": len(position_updates),
                 "cancelled_updates": sum(

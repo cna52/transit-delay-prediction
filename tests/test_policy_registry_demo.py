@@ -189,3 +189,86 @@ def test_synthetic_demo_is_deterministic_and_explicit(tmp_path) -> None:
     summary = build_portfolio_summary(data, reports)
     assert "Evidence mode: synthetic/replay" in summary
     assert "Résumé eligible: no; completion gates remain pending" in summary
+
+
+def test_fixed_lag_policy_requires_matching_route_audit_and_review(tmp_path) -> None:
+    data = tmp_path / "data"
+    reports = tmp_path / "reports"
+    frozen = reports / "label-audits"
+    frozen.mkdir(parents=True)
+    audit_value = {
+        "label_semantics": {
+            "label_lag_seconds": 300,
+            "candidate_window_seconds": 480,
+            "examples_checked": 100,
+            "candidate_coverage": 0.8,
+            "by_local_date": {
+                "2026-08-10": {"examples": 50, "candidates": 40},
+                "2026-08-11": {"examples": 50, "candidates": 40},
+            },
+        }
+    }
+    audit_payload = json.dumps(audit_value, sort_keys=True)
+    digest = hashlib.sha256(audit_payload.encode()).hexdigest()
+    (frozen / f"{digest}.json").write_text(audit_payload)
+    review = reports / "review.json"
+    review.write_text(
+        json.dumps(
+            {
+                "audit_sha256": digest,
+                "routes": ["R5"],
+                "label_lag_seconds": 300,
+                "candidate_window_seconds": 480,
+                "samples": [
+                    {
+                        "trip_key": f"v|2026-08-{10 + index // 5:02d}|trip-{index}|",
+                        "local_date": f"2026-08-{10 + index // 5:02d}",
+                        "route": "R5",
+                        "review_status": "reviewed",
+                        "review_notes": "future target estimate and vehicle position inspected",
+                    }
+                    for index in range(10)
+                ],
+            }
+        )
+    )
+    scope = reports / "scope.json"
+    scope.write_text(
+        json.dumps(
+            {
+                "routes": ["R5"],
+                "quality": {"strict_join_success_rate": 0.99},
+                "audit": audit_value,
+            }
+        )
+    )
+    (reports / "dataset-quality.json").write_text(
+        json.dumps({"strict_join_success_rate": 0.95, "service_days": 2})
+    )
+    (reports / "collection.json").write_text(
+        json.dumps({"usable_service_dates": ["2026-08-10", "2026-08-11"]})
+    )
+    config = tmp_path / "config.yaml"
+    config.write_text(f"data_dir: {data}\nreport_dir: {reports}\nselected_routes: ['R5']\n")
+    command = [
+        "create-label-policy",
+        "--config",
+        str(config),
+        "--target-type",
+        "reported_delay_state_fixed_lag",
+        "--review",
+        str(review),
+        "--scope-report",
+        str(scope),
+    ]
+    result = CliRunner().invoke(app, command)
+    assert result.exit_code == 0, result.output
+    policy = LabelPolicy.load(data / "state/label-policy.json")
+    assert policy.routes == ("R5",)
+    assert policy.label_lag_seconds == 300
+    assert policy.candidate_window_seconds == 480
+    policy.verify_archives(data)
+    scoped_archive = data / "state/route-scopes" / f"{policy.scope_report_sha256}.json"
+    scoped_archive.write_text("{}")
+    with pytest.raises(RuntimeError, match="route-scope checksum"):
+        policy.verify_archives(data)

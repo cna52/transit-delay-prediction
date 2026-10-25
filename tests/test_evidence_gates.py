@@ -77,6 +77,13 @@ def test_audit_candidate_must_arrive_within_30_minutes() -> None:
     assert probe["label_lag_seconds"] == 300
     assert probe["candidate_window_seconds"] == 240
     assert probe["candidate_observation_lag_seconds"]["p50"] == 300
+    probe_sample = trip_timeline_samples(
+        [(feed, early)],
+        [feature],
+        label_lag_seconds=300,
+        candidate_window_seconds=240,
+    )[0]
+    assert probe_sample["target_history"][0]["within_candidate_window"] is True
     other_trip = ParsedFeed(target, None, (replace(trip, trip_id="t2"),), ())
     trip_disappeared = audit_feeds(
         [(feed, target - timedelta(seconds=1)), (other_trip, within), (other_trip, too_late)],
@@ -116,6 +123,23 @@ def test_audit_candidate_must_arrive_within_30_minutes() -> None:
     scoped = trip_timeline_samples([], [feature, later_feature], service_dates={"2026-08-11"})
     assert [row["trip_key"] for row in scoped] == [later_feature.key.stable_id()]
     assert trip_timeline_samples([], [later_feature], local_dates={"2026-08-11"}) == []
+    hourly = [
+        replace(
+            feature,
+            example_id=f"spread-{index}",
+            key=TripInstanceKey("v1", date(2026, 8, 10), f"trip-{index}"),
+            as_of=feature.as_of + timedelta(hours=index),
+        )
+        for index in range(10)
+    ]
+    spread = trip_timeline_samples([], hourly, limit=5)
+    assert [row["trip_key"].split("|")[2] for row in spread] == [
+        "trip-1",
+        "trip-3",
+        "trip-5",
+        "trip-7",
+        "trip-9",
+    ]
 
 
 def test_locked_train_rejects_short_window(tmp_path) -> None:

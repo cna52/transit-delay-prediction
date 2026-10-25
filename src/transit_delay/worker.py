@@ -119,6 +119,8 @@ def build_labels_and_dataset(settings: Settings, features_path: Path) -> dict[st
         return {"status": "label_policy_pending"}
     policy = LabelPolicy.load(policy_path)
     policy.verify_archives(settings.data_dir)
+    if policy.routes and set(policy.routes) != set(settings.selected_routes):
+        raise RuntimeError("active route scope does not match approved label policy")
     rows = read_features(features_path)
     manifests = _manifests(settings)
     outcomes = resolve_archived_labels(
@@ -225,7 +227,15 @@ def refresh_reports(settings: Settings) -> dict[str, object]:
         from transit_delay.datasets.resolver import read_features
 
         features = read_features(features_path)
-    audit = audit_feeds(archived_feeds(manifests), features, timezone_name=settings.timezone)
+    policy_path = settings.data_dir / "state" / "label-policy.json"
+    policy = LabelPolicy.load(policy_path) if policy_path.exists() else None
+    audit = audit_feeds(
+        archived_feeds(manifests),
+        features,
+        label_lag_seconds=policy.label_lag_seconds if policy else None,
+        candidate_window_seconds=policy.candidate_window_seconds if policy else 1800,
+        timezone_name=settings.timezone,
+    )
     write_report(audit, settings.report_dir / "feed-audit.json")
     quality_path = settings.report_dir / "dataset-quality.json"
     review_packet: Path | None = None

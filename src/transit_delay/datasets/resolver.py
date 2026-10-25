@@ -17,6 +17,11 @@ def resolve_archived_labels(
     labeler: Labeler,
     wait_seconds: int = 1800,
 ) -> list[LabelOutcome]:
+    if (
+        labeler.policy is not None
+        and labeler.policy.target_type == "reported_delay_state_fixed_lag"
+    ):
+        wait_seconds = labeler.policy.candidate_window_seconds
     timelines: dict[str, list[tuple[datetime, RealtimeTripUpdate]]] = defaultdict(list)
     for manifest in sorted(manifests):
         for line in manifest.read_text().splitlines():
