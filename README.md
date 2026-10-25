@@ -65,9 +65,21 @@ candidate-label coverage, inspect the audit and create an explicit, checksummed 
 ```
 
 `measured_arrival` is available only when the stricter audit also demonstrates retained
-post-passage updates corroborated by vehicle positions. Until then the default target is honestly
-named “reported target-stop delay state 10–15 minutes later.” The audit used to authorize a label
-policy is copied to an immutable, checksum-addressed artifact.
+post-passage updates corroborated by vehicle positions. The October 23–24 live audit found only
+28.1% candidate coverage for the original reported-state target, so that policy was not approved.
+The active R5 evidence configuration instead uses a reviewed, checksummed
+`reported_delay_state_fixed_lag` policy: a future producer-reported target-stop delay value first
+available 5–13 minutes after prediction. It is a proxy, not observed arrival. Its isolated
+two-day replay reached 77.6% candidate coverage; see [the case study](docs/case-study.md) for
+the day-level gap and missingness limits. The audit, ten-trip review, and route-scope report are
+archived by checksum outside Git. The production policy command is:
+
+```bash
+.venv311/bin/transit-delay create-label-policy --config configs/evidence.yaml \
+  --target-type reported_delay_state_fixed_lag \
+  --review data/evidence-2026-10-22/reports/route-scopes/R5-lag300-w480-timelines-reviewed.json \
+  --scope-report data/evidence-2026-10-22/reports/route-scopes/R5-lag300-w480.json
+```
 
 For an offline portfolio demo that never masquerades as live evidence:
 
