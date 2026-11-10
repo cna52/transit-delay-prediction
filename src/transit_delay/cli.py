@@ -38,6 +38,7 @@ from transit_delay.models.evaluation import (
     promotion_decision,
     rolling_origin_splits,
 )
+from transit_delay.models.preview import preview_validation
 from transit_delay.models.training import train_lightgbm, train_ridge
 from transit_delay.monitoring.audit import archived_feeds, audit_feeds, trip_timeline_samples
 from transit_delay.monitoring.delayed import join_delayed_labels
@@ -610,6 +611,27 @@ def evidence_report(config: Path | None = None) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(build_portfolio_summary(settings.data_dir, settings.report_dir))
     typer.echo(str(output))
+
+
+@app.command("preview-evaluation")
+def preview_evaluation(
+    dataset: Path,
+    config: Path | None = None,
+    output: Path | None = None,
+    strong_model: bool = False,
+) -> None:
+    """Compare models on historical validation dates without opening the locked test."""
+    settings = load_settings(config)
+    report = preview_validation(
+        dataset,
+        settings.data_dir,
+        settings.report_dir,
+        settings.timezone,
+        strong_model=strong_model,
+    )
+    destination = output or settings.report_dir / "preliminary-validation.json"
+    write_report(report, destination)
+    typer.echo(json.dumps({"report": str(destination), "evidence_type": report["evidence_type"]}))
 
 
 @app.command("train")

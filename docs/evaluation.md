@@ -25,3 +25,18 @@ then evaluated once on the locked test period. Promotion requires all of the fol
 An isolated score is never sufficient. Reports retain the baseline comparison, chronological
 boundaries, rolling-origin folds, route/horizon/time/freshness slices, fallback rate, and interval
 coverage. Synthetic and replay results are development checks and are excluded from résumé claims.
+
+## Early validation preview
+
+After at least 14 complete usable days, `preview-evaluation` compares Ridge with persistence and
+historical median on past days only. It trains on earlier complete Vancouver dates and uses the
+latest seven of the first 21 complete dates for exploratory validation. The split preserves trip
+instances, purges 30 minutes around its boundary, verifies the dataset and label-policy checksums,
+and reports missing labels and a trip-clustered paired interval. It does not create a serving
+artifact or make a promotion decision. Dates 22–28 of the locked evaluation remain untouched.
+
+```bash
+.venv311/bin/transit-delay preview-evaluation \
+  data/evidence-2026-10-22/processed/datasets/DATASET_VERSION/rows.jsonl \
+  --config configs/evidence.yaml
+```

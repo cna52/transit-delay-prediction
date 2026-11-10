@@ -15,3 +15,4 @@ reports/generated/
 reports/demo/
 *.duckdb
 *.log
+.DS_Store
