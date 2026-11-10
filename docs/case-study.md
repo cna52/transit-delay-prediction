@@ -190,3 +190,31 @@ health and readiness endpoints respond, and a live R5 request returned `persiste
 `fallback_reason=no_promoted_model`. These are dataset and serving checks, not accuracy results.
 As of the morning of October 25, two of the required 28 complete usable service days are
 available. The seven-day post-evaluation monitoring window has not started.
+
+## Exploratory validation preview — November 9
+
+Seventeen complete usable local service dates are available through November 8. The committed
+`preview-evaluation` command trained on October 23–November 1 and scored November 2–8 without
+opening any final test dates or creating a serving artifact. It verified dataset
+`ds-0a042d1344f9` and the approved R5 proxy policy, kept trip instances together, and purged
+30 minutes around the date boundary. There were 6,968 labelled training examples and 5,278
+labelled validation examples; validation label missingness was 8.0%.
+
+On that **exploratory validation** period, Ridge had 2.043-minute MAE, persistence 2.452, and
+historical median 3.206. Ridge's trip-weighted MAE difference from persistence was −0.400
+minutes, with a trip-clustered 95% interval of [−0.471, −0.327]. These values describe a
+producer-reported future delay proxy on route R5. They are not observed-arrival accuracy, a
+locked test result, or a promotion decision. The full derived-metric report is retained at
+[preliminary-validation-2026-11-09.json](evidence/preliminary-validation-2026-11-09.json).
+
+Reproduce the preview from the retained licensed local dataset with:
+
+```bash
+.venv311/bin/transit-delay preview-evaluation \
+  data/evidence-2026-10-22/processed/datasets/ds-0a042d1344f9/rows.jsonl \
+  --config configs/evidence.yaml \
+  --output docs/evidence/preliminary-validation-2026-11-09.json
+```
+
+The planned final split still requires 28 usable days. Its last seven dates remain unopened.
+The Docker API is currently stopped; the host collector and worker continue collecting.
