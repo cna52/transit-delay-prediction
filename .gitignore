@@ -16,3 +16,4 @@ reports/demo/
 *.duckdb
 *.log
 .DS_Store
+docs/evidence/*.html
