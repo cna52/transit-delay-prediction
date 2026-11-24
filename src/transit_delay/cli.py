@@ -639,12 +639,14 @@ def train(dataset: Path, config: Path | None = None, strong_model: bool = False)
     """Train and compare a model against chronological baselines."""
     settings = load_settings(config)
     records = [json.loads(line) for line in dataset.read_text().splitlines() if line]
-    collection_path = settings.report_dir / "collection.json"
-    if not collection_path.exists():
-        raise typer.BadParameter("collection report is required before locked evaluation")
-    collection = json.loads(collection_path.read_text())
-    today = datetime.now(UTC).astimezone(ZoneInfo(settings.timezone)).date().isoformat()
-    usable_dates = {day for day in collection.get("usable_service_dates", []) if day < today}
+    feasibility_path = settings.report_dir / "feasibility.json"
+    if not feasibility_path.exists():
+        raise typer.BadParameter("feasibility report is required before locked evaluation")
+    feasibility = json.loads(feasibility_path.read_text())
+    # Only count service days that passed the complete-day feasibility audit. The
+    # collection report's usable dates are a looser poll-coverage signal and may
+    # include dates that are not yet complete.
+    usable_dates = set(feasibility.get("complete_usable_dates", []))
     records = [row for row in records if str(row["key"]).split("|")[1] in usable_dates]
     labelled_dates = {
         str(row["key"]).split("|")[1]
