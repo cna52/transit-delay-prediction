@@ -16,6 +16,7 @@ from transit_delay.monitoring.evidence import build_portfolio_summary
 from transit_delay.worker import (
     Worker,
     build_features,
+    next_report_refresh,
     next_static_refresh,
     offline_rebuild_due,
     refresh_reports,
@@ -38,6 +39,22 @@ def test_static_refresh_interval_uses_latest_retained_retrieval(tmp_path) -> Non
     deadline = next_static_refresh(settings, monotonic_now=100.0)
 
     assert abs(deadline - (100 + 5 * 24 * 60 * 60)) < 1
+
+
+def test_report_refresh_interval_uses_existing_report_mtime(tmp_path) -> None:
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    report = reports / "collection.json"
+    report.write_text("{}")
+    now = datetime.now(UTC).timestamp()
+    import os
+
+    os.utime(report, (now - 3600, now - 3600))
+    settings = Settings(report_dir=reports, reporting_interval_seconds=24 * 60 * 60)
+
+    deadline = next_report_refresh(settings, monotonic_now=100.0)
+
+    assert abs(deadline - (100 + 23 * 60 * 60)) < 1
 
 
 def test_worker_builds_atomic_snapshot_heartbeat_and_reports(tmp_path) -> None:

@@ -72,6 +72,26 @@ def next_static_refresh(settings: Settings, monotonic_now: float) -> float:
     return monotonic_now + remaining
 
 
+def next_report_refresh(settings: Settings, monotonic_now: float) -> float:
+    """Avoid rerunning a recent full-history audit just because the worker restarted."""
+    report_files = [
+        settings.report_dir / name
+        for name in (
+            "collection.json",
+            "dataset-quality.json",
+            "feed-audit.json",
+            "feasibility.json",
+        )
+    ]
+    existing = [path for path in report_files if path.exists()]
+    if not existing:
+        return monotonic_now
+    latest_mtime = max(path.stat().st_mtime for path in existing)
+    age = max(0.0, time.time() - latest_mtime)
+    remaining = max(0.0, settings.reporting_interval_seconds - age)
+    return monotonic_now + remaining
+
+
 def _manifests(settings: Settings, recent: bool = False) -> list[Path]:
     paths = sorted((settings.data_dir / "raw" / "manifests").glob("*.jsonl"))
     return paths[-2:] if recent else paths
@@ -364,7 +384,8 @@ class Worker:
         signal.signal(signal.SIGTERM, self.stop)
         signal.signal(signal.SIGINT, self.stop)
         now_monotonic = time.monotonic()
-        next_serving = next_reports = 0.0
+        next_serving = 0.0
+        next_reports = next_report_refresh(self.settings, now_monotonic)
         next_static = next_static_refresh(self.settings, time.monotonic())
         timezone = ZoneInfo(self.settings.timezone)
         state = read_state(self.state_path) or {}
