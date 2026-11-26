@@ -567,27 +567,46 @@ def report_predictions(
     config: Path | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    start_at: str | None = None,
+    end_at: str | None = None,
 ) -> None:
     settings = load_settings(config)
     try:
         start = date.fromisoformat(start_date) if start_date else None
         end = date.fromisoformat(end_date) if end_date else None
+        start_timestamp = datetime.fromisoformat(start_at) if start_at else None
+        end_timestamp = datetime.fromisoformat(end_at) if end_at else None
     except ValueError as exc:
-        raise typer.BadParameter("dates must use YYYY-MM-DD") from exc
+        raise typer.BadParameter(
+            "dates must use YYYY-MM-DD and timestamps must be ISO 8601"
+        ) from exc
+    if any(value and value.tzinfo is None for value in (start_timestamp, end_timestamp)):
+        raise typer.BadParameter("timestamps must include a timezone offset")
+    predictions_log = settings.data_dir / "logs" / "predictions.jsonl"
+    labels_log = settings.data_dir / "processed" / "labels.jsonl"
     labelled = settings.data_dir / "monitoring" / "labelled_predictions.jsonl"
-    source = labelled if labelled.exists() else settings.data_dir / "logs" / "predictions.jsonl"
+    if predictions_log.exists() and labels_log.exists():
+        join_delayed_labels(predictions_log, labels_log, labelled)
+    source = labelled if labelled.exists() else predictions_log
     report = prediction_report(
         source,
         settings.data_dir / "logs" / "api_requests.jsonl",
         start,
         end,
         settings.timezone,
+        start_timestamp,
+        end_timestamp,
     )
-    suffix = (
-        f"-{start.isoformat() if start else 'start'}-{end.isoformat() if end else 'end'}"
-        if start or end
-        else ""
-    )
+    if start_timestamp or end_timestamp:
+        start_label = start_timestamp.strftime("%Y%m%dT%H%M%S%z") if start_timestamp else "start"
+        end_label = end_timestamp.strftime("%Y%m%dT%H%M%S%z") if end_timestamp else "end"
+        suffix = f"-{start_label}-{end_label}"
+    else:
+        suffix = (
+            f"-{start.isoformat() if start else 'start'}-{end.isoformat() if end else 'end'}"
+            if start or end
+            else ""
+        )
     output = settings.report_dir / f"predictions{suffix}.json"
     write_report(report, output)
     typer.echo(str(output))

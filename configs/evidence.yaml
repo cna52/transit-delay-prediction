@@ -4,6 +4,8 @@ report_dir: data/evidence-2026-10-22/reports
 trip_updates_interval_seconds: 240
 vehicle_positions_interval_seconds: 240
 serving_refresh_interval_seconds: 120
+# Static GTFS releases weekly; reuse the retained feed until its one-week refresh is due.
+static_refresh_interval_seconds: 604800
 daily_request_limit: 900
 data_mode: live
 selected_routes: [R5]

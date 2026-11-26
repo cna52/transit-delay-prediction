@@ -4,7 +4,7 @@ import html
 import json
 from collections import Counter
 from dataclasses import asdict, dataclass, is_dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from statistics import mean
 from zoneinfo import ZoneInfo
@@ -139,9 +139,15 @@ def prediction_report(
     start_date: date | None = None,
     end_date: date | None = None,
     timezone_name: str = "America/Vancouver",
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
 ) -> dict[str, object]:
     if start_date and end_date and start_date > end_date:
         raise ValueError("monitoring start date must not exceed end date")
+    if start_at and end_at and start_at > end_at:
+        raise ValueError("monitoring start timestamp must not exceed end timestamp")
+    if any(value and value.tzinfo is None for value in (start_at, end_at)):
+        raise ValueError("monitoring timestamps must include a timezone")
     timezone = ZoneInfo(timezone_name)
 
     def local_day(row: dict[str, object], field: str) -> str | None:
@@ -151,8 +157,19 @@ def prediction_report(
         return datetime.fromisoformat(str(value)).astimezone(timezone).date().isoformat()
 
     def included(row: dict[str, object], field: str) -> bool:
+        raw_timestamp = row.get(field)
+        if start_at or end_at:
+            if not raw_timestamp:
+                return False
+            timestamp = datetime.fromisoformat(str(raw_timestamp))
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=UTC)
+            if start_at and timestamp < start_at:
+                return False
+            if end_at and timestamp > end_at:
+                return False
         if start_date is None and end_date is None:
-            return True
+            return bool(raw_timestamp) if start_at or end_at else True
         day = local_day(row, field)
         return bool(
             day
@@ -173,6 +190,14 @@ def prediction_report(
     rows = [row for row in rows if included(row, "predicted_at")]
     requests = [row for row in requests if included(row, "requested_at")]
     labelled = [row for row in rows if row.get("label_minutes") is not None]
+    label_statuses = Counter(
+        str(
+            row.get(
+                "label_status", "labelled" if row.get("label_minutes") is not None else "missing"
+            )
+        )
+        for row in rows
+    )
     absolute = [
         abs(float(row["prediction_minutes"]) - float(row["label_minutes"]))
         for row in labelled
@@ -184,22 +209,122 @@ def prediction_report(
     )
     failures = [row for row in requests if int(row.get("status_code", 500)) >= 400]
     prediction_days = sorted({day for row in rows if (day := local_day(row, "predicted_at"))})
+
+    def slice_metrics(
+        prediction_rows: list[dict[str, object]], request_rows: list[dict[str, object]]
+    ) -> dict[str, object]:
+        slice_labelled = [row for row in prediction_rows if row.get("label_minutes") is not None]
+        errors = [row for row in request_rows if int(row.get("status_code", 500)) >= 400]
+        slice_latency = sorted(
+            float(row["latency_ms"]) for row in request_rows if "latency_ms" in row
+        )
+        slice_freshness = sorted(
+            float(row["freshness_seconds"])
+            for row in prediction_rows
+            if row.get("freshness_seconds") is not None
+        )
+        slice_statuses = Counter(
+            str(
+                row.get(
+                    "label_status",
+                    "labelled" if row.get("label_minutes") is not None else "missing",
+                )
+            )
+            for row in prediction_rows
+        )
+        slice_fallbacks = Counter(
+            str(row.get("fallback_reason")) for row in prediction_rows if row.get("fallback_reason")
+        )
+        versions = Counter(str(row.get("model_version")) for row in prediction_rows)
+        residuals = [
+            float(row["prediction_minutes"]) - float(row["label_minutes"])
+            for row in slice_labelled
+            if row.get("prediction_minutes") is not None
+        ]
+        return {
+            "predictions": len(prediction_rows),
+            "requests": len(request_rows),
+            "request_errors": len(errors),
+            "request_error_rate": len(errors) / len(request_rows) if request_rows else 0.0,
+            "latency_ms": {
+                "p50": _report_quantile(slice_latency, 0.5),
+                "p95": _report_quantile(slice_latency, 0.95),
+            },
+            "freshness_seconds": {
+                "p50": _report_quantile(slice_freshness, 0.5),
+                "p95": _report_quantile(slice_freshness, 0.95),
+            },
+            "model_versions": dict(versions),
+            "fallback_counts": dict(slice_fallbacks),
+            "stale_input_fallbacks": slice_fallbacks.get("stale_features", 0),
+            "label_status_counts": dict(slice_statuses),
+            "matured_labels": slice_statuses.get("labelled", 0),
+            "missing_or_pending_labels": slice_statuses.get("pending", 0)
+            + slice_statuses.get("missing", 0),
+            "censored_labels": slice_statuses.get("censored", 0),
+            "mae_minutes": mean(abs(value) for value in residuals) if residuals else None,
+            "bias_minutes": mean(residuals) if residuals else None,
+        }
+
+    requests_by_day: dict[str, list[dict[str, object]]] = {}
+    for request in requests:
+        day = local_day(request, "requested_at")
+        if day:
+            requests_by_day.setdefault(day, []).append(request)
+    predictions_by_day: dict[str, list[dict[str, object]]] = {}
+    predictions_by_route: dict[str, list[dict[str, object]]] = {}
+    requests_by_route: dict[str, list[dict[str, object]]] = {}
+    for request in requests:
+        route = request.get("route")
+        if route is not None:
+            requests_by_route.setdefault(str(route), []).append(request)
+    for row in rows:
+        day = local_day(row, "predicted_at")
+        if day:
+            predictions_by_day.setdefault(day, []).append(row)
+        route = row.get("route")
+        if route is not None:
+            predictions_by_route.setdefault(str(route), []).append(row)
+    daily = {
+        day: slice_metrics(predictions_by_day.get(day, []), requests_by_day.get(day, []))
+        for day in sorted(set(predictions_by_day) | set(requests_by_day))
+    }
+    route_names = set(predictions_by_route) | set(requests_by_route)
+    routes = {
+        route: slice_metrics(predictions_by_route.get(route, []), requests_by_route.get(route, []))
+        for route in sorted(route_names)
+    }
     return {
         "window_start": start_date.isoformat() if start_date else None,
         "window_end": end_date.isoformat() if end_date else None,
+        "window_start_at": start_at.isoformat() if start_at else None,
+        "window_end_at": end_at.isoformat() if end_at else None,
         "prediction_days": prediction_days,
         "observed_prediction_days": len(prediction_days),
         "predictions": len(rows),
         "requests": len(requests),
+        "request_errors": len(failures),
         "request_error_rate": len(failures) / len(requests) if requests else 0.0,
         "latency_ms": {
             "p50": _report_quantile(latencies, 0.5),
             "p95": _report_quantile(latencies, 0.95),
         },
         "labelled": len(labelled),
+        "label_status_counts": dict(label_statuses),
+        "matured_labels": label_statuses.get("labelled", len(labelled)),
+        "missing_or_pending_labels": label_statuses.get("pending", 0)
+        + label_statuses.get("missing", 0),
+        "censored_labels": label_statuses.get("censored", 0),
         "label_coverage": len(labelled) / len(rows) if rows else 0.0,
         "missing_label_rate": 1 - len(labelled) / len(rows) if rows else 0.0,
         "mae_minutes": mean(absolute) if absolute else None,
+        "bias_minutes": mean(
+            float(row["prediction_minutes"]) - float(row["label_minutes"])
+            for row in labelled
+            if row.get("prediction_minutes") is not None
+        )
+        if any(row.get("prediction_minutes") is not None for row in labelled)
+        else None,
         "fallback_rate": sum(row.get("quality") != "normal" for row in rows) / len(rows)
         if rows
         else 0.0,
@@ -208,6 +333,14 @@ def prediction_report(
         "fallback_reasons": dict(
             Counter(str(row.get("fallback_reason")) for row in rows if row.get("fallback_reason"))
         ),
+        "fallback_counts": dict(
+            Counter(str(row.get("fallback_reason")) for row in rows if row.get("fallback_reason"))
+        ),
+        "stale_input_fallbacks": sum(
+            row.get("fallback_reason") == "stale_features" for row in rows
+        ),
+        "daily": daily,
+        "routes": routes,
         "freshness_seconds": {
             "p50": _report_quantile(freshness, 0.5),
             "p95": _report_quantile(freshness, 0.95),

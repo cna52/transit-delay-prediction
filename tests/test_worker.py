@@ -16,10 +16,28 @@ from transit_delay.monitoring.evidence import build_portfolio_summary
 from transit_delay.worker import (
     Worker,
     build_features,
+    next_static_refresh,
     offline_rebuild_due,
     refresh_reports,
     write_trip_review_packet,
 )
+
+
+def test_static_refresh_interval_uses_latest_retained_retrieval(tmp_path) -> None:
+    data = tmp_path / "data"
+    archive = data / "raw/static/static.zip"
+    archive.parent.mkdir(parents=True)
+    write_static_fixture(archive)
+    retrieved = datetime.now(UTC) - timedelta(days=2)
+    StaticFeedRegistry(data / "processed/static/registry.json").register(archive, retrieved)
+    settings = Settings(
+        data_dir=data,
+        static_refresh_interval_seconds=7 * 24 * 60 * 60,
+    )
+
+    deadline = next_static_refresh(settings, monotonic_now=100.0)
+
+    assert abs(deadline - (100 + 5 * 24 * 60 * 60)) < 1
 
 
 def test_worker_builds_atomic_snapshot_heartbeat_and_reports(tmp_path) -> None:

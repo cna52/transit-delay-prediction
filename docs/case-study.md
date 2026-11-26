@@ -216,5 +216,33 @@ Reproduce the preview from the retained licensed local dataset with:
   --output docs/evidence/preliminary-validation-2026-11-09.json
 ```
 
-The planned final split still requires 28 usable days. Its last seven dates remain unopened.
-The Docker API is currently stopped; the host collector and worker continue collecting.
+The following final evaluation record supersedes the earlier dated planning status above.
+
+## Locked offline evaluation — November 24
+
+The locked chronological evaluation used dataset [`ds-a8cd233959b0`](../data/evidence-2026-10-22/processed/datasets/ds-a8cd233959b0/manifest.json), created from code commit `8235d9bda170dc6eac321a13c9a2a370d7376c46`, and policy `label-reported-delay-state-fixed-lag-a66765a09644`. The policy covers route R5 and labels the producer-reported target-stop delay state from the first eligible update received 5–13 minutes after prediction (a 300-second lag followed by an eight-minute candidate window). This is a future reported-state proxy, not an observed arrival or actual delay.
+
+The split was chronological: training October 23–November 7 (16 service dates), validation November 8–14 (7 dates), and locked test November 15–21, 2026 (7 dates). Ridge (`ridge-alpha-1`) was selected on validation. The test contained 3,916 labelled examples. Test MAE and bias were 1.848 and +0.212 minutes for Ridge, 2.371 and −0.317 for persistence, and 2.478 and +0.101 for the historical median. Ridge's trip-weighted MAE improvement over persistence was 0.493 minutes; its trip-clustered 95% interval for the difference (Ridge minus persistence) was [−0.567, −0.418] minutes. The promotion gate approved Ridge. The 90% residual interval covered 90.2% of test labels. Across the dataset, 2,131 of 22,905 rows were censored or invalid, a 9.3% missing-label rate; label coverage must accompany the accuracy figures.
+
+The selected artifact is `model-911a62d1e48c` (`ridge-alpha-1`). Its manifest binds it to the dataset and commit above. The committed [sanitized locked-evaluation summary](evidence/locked-evaluation-2026-11-24.json) records the key result. The full `evaluation.json`, dataset manifest, policy, and artifact manifest are retained under the local Git-ignored `data/evidence-2026-10-22/` directory; inspect those with the commands below. The full report contains date, route, horizon, and time-of-day slices, rolling backtests, interval coverage, promotion reasoning, and missing-label counts.
+
+The locked test is not rerun for this case study. Inspect its retained report and artifact metadata with:
+
+```bash
+python3 -m json.tool data/evidence-2026-10-22/reports/evaluation.json
+cat data/evidence-2026-10-22/artifacts/model-911a62d1e48c/manifest.json
+```
+
+These commands inspect the original evidence without fitting or scoring another model. The split and gate definitions are in [the evaluation protocol](evaluation.md). A changed model or protocol requires a new separately declared evaluation.
+
+## Post-evaluation serving window
+
+The seven-day monitoring window started after the locked evaluation at `2026-11-26T01:00:27.610372Z`, after the API loaded the evaluated Ridge artifact and a live R5 prediction succeeded. It ends at `2026-12-03T01:00:27.610372Z`. The collector, worker, and 15-minute serving probe are running. The API and first successful live prediction are documented in the [startup check record](evidence/serving-window-start-2026-11-26.json). An initial in-window snapshot records one successful model request, no request errors, and one pending label; MAE and bias are not yet available. Retain the final timestamp-bounded report after the end; extend the window for interruptions:
+
+```bash
+.venv311/bin/transit-delay prediction-report --config configs/evidence.yaml \
+  --start-at 2026-11-26T01:00:27.610372+00:00 \
+  --end-at 2026-12-03T01:00:27.610372+00:00
+```
+
+The existing local `data/evidence-2026-10-22/reports/predictions.json` is earlier baseline evidence from October 22–27. It records persistence fallback for all 591 requests and is not post-evaluation evidence. The new window is in progress; no seven-day serving report exists yet, so online accuracy, reliability, freshness, fallback, and label-maturity results remain pending. Keep those results separate from the locked offline metrics above; report matured and missing/censored labels with any online MAE and bias. If the serving window has gaps, disclose them and extend it until seven complete monitored days accrue.

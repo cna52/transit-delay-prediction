@@ -1,6 +1,9 @@
 import json
 from datetime import UTC, date, datetime, timedelta
 
+from typer.testing import CliRunner
+
+from transit_delay.cli import app
 from transit_delay.monitoring.delayed import join_delayed_labels
 from transit_delay.monitoring.report import collection_report, prediction_report
 
@@ -94,6 +97,161 @@ def test_prediction_report_can_lock_a_local_service_window(tmp_path) -> None:
     assert report["mae_minutes"] == 1
     assert report["fallback_reasons"] == {"no_promoted_model": 1}
     assert report["freshness_seconds"]["p95"] == 40
+
+
+def test_prediction_report_reconciles_daily_and_route_serving_evidence(tmp_path) -> None:
+    predictions = tmp_path / "predictions.jsonl"
+    requests = tmp_path / "requests.jsonl"
+    at = "2026-10-22T17:00:00-07:00"
+    predictions.write_text(
+        "\n".join(
+            json.dumps(row)
+            for row in [
+                {
+                    "predicted_at": at,
+                    "prediction_minutes": 3,
+                    "label_minutes": 2,
+                    "label_status": "labelled",
+                    "model_version": "model-ridge",
+                    "route": "R5",
+                    "freshness_seconds": 90,
+                    "quality": "normal",
+                },
+                {
+                    "predicted_at": at,
+                    "prediction_minutes": 2,
+                    "label_minutes": None,
+                    "label_status": "censored",
+                    "model_version": "persistence-v1",
+                    "route": "R5",
+                    "freshness_seconds": 180,
+                    "quality": "fallback",
+                    "fallback_reason": "stale_features",
+                },
+            ]
+        )
+        + "\n"
+    )
+    requests.write_text(
+        json.dumps(
+            {
+                "requested_at": at,
+                "status_code": 503,
+                "latency_ms": 12,
+                "route": "R5",
+            }
+        )
+        + "\n"
+    )
+
+    report = prediction_report(predictions, requests, date(2026, 10, 22), date(2026, 10, 22))
+
+    assert report["request_errors"] == 1
+    assert report["bias_minutes"] == 1
+    assert report["matured_labels"] == 1
+    assert report["censored_labels"] == 1
+    assert report["stale_input_fallbacks"] == 1
+    assert report["daily"]["2026-10-22"]["freshness_seconds"] == {"p50": 90.0, "p95": 180.0}
+    assert report["routes"]["R5"]["model_versions"] == {"model-ridge": 1, "persistence-v1": 1}
+    assert report["routes"]["R5"]["request_errors"] == 1
+
+
+def test_prediction_report_can_filter_exact_timestamp_window(tmp_path) -> None:
+    predictions = tmp_path / "predictions.jsonl"
+    requests = tmp_path / "requests.jsonl"
+    timestamps = [
+        "2026-11-26T00:42:32.668267+00:00",
+        "2026-11-26T00:42:32.668268+00:00",
+        "2026-12-03T00:42:32.668268+00:00",
+        "2026-12-03T00:42:32.668269+00:00",
+    ]
+    predictions.write_text(
+        "\n".join(
+            json.dumps({"predicted_at": timestamp, "prediction_minutes": 1})
+            for timestamp in timestamps
+        )
+        + "\n"
+    )
+    requests.write_text(
+        "\n".join(
+            json.dumps({"requested_at": timestamp, "status_code": 200}) for timestamp in timestamps
+        )
+        + "\n"
+    )
+
+    report = prediction_report(
+        predictions,
+        requests,
+        start_at=datetime.fromisoformat(timestamps[1]),
+        end_at=datetime.fromisoformat(timestamps[2]),
+    )
+
+    assert report["predictions"] == report["requests"] == 2
+    assert report["window_start_at"] == timestamps[1]
+    assert report["window_end_at"] == timestamps[2]
+
+
+def test_prediction_report_refreshes_join_for_latest_predictions(tmp_path) -> None:
+    data = tmp_path / "data"
+    reports = tmp_path / "reports"
+    (data / "logs").mkdir(parents=True)
+    (data / "processed").mkdir(parents=True)
+    (data / "monitoring").mkdir(parents=True)
+    config = tmp_path / "config.yaml"
+    config.write_text(f"data_dir: {data}\nreport_dir: {reports}\ntimezone: UTC\n")
+    (data / "logs/predictions.jsonl").write_text(
+        json.dumps(
+            {
+                "prediction_id": "new-prediction",
+                "example_id": "new-example",
+                "predicted_at": "2026-11-26T00:42:32+00:00",
+                "prediction_minutes": 2,
+                "model_version": "model-ridge",
+            }
+        )
+        + "\n"
+    )
+    (data / "processed/labels.jsonl").write_text(
+        json.dumps(
+            {
+                "example_id": "new-example",
+                "status": "pending",
+                "label_minutes": None,
+                "available_at": "2026-11-26T00:42:32+00:00",
+            }
+        )
+        + "\n"
+    )
+    (data / "monitoring/labelled_predictions.jsonl").write_text(
+        json.dumps(
+            {
+                "prediction_id": "old-prediction",
+                "example_id": "old-example",
+                "predicted_at": "2026-11-25T00:00:00+00:00",
+                "label_status": "pending",
+            }
+        )
+        + "\n"
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "prediction-report",
+            "--config",
+            str(config),
+            "--start-at",
+            "2026-11-26T00:42:32+00:00",
+            "--end-at",
+            "2026-12-03T00:42:32+00:00",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    report_path = reports / "predictions-20261126T004232+0000-20261203T004232+0000.json"
+    report = json.loads(report_path.read_text())
+    assert report["predictions"] == 1
+    assert report["missing_or_pending_labels"] == 1
 
 
 def test_collection_projects_storage_only_from_complete_usable_days(tmp_path) -> None:

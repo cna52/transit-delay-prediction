@@ -1,0 +1,91 @@
+{
+  "code_commit": "8235d9bda170dc6eac321a13c9a2a370d7376c46",
+  "dataset_version": "ds-a8cd233959b0",
+  "evaluation_created_at_utc": "2026-11-24T06:00:22.743221+00:00",
+  "interval_90": {
+    "q05": -3.533639206393539,
+    "q95": 4.1433085321459036,
+    "test_coverage": 0.9024514811031665
+  },
+  "label_policy_version": "label-reported-delay-state-fixed-lag-a66765a09644",
+  "missing_label_rate": 0.09294591283038683,
+  "model_version": "model-911a62d1e48c",
+  "note": "Metrics evaluate the future producer-reported delay-state proxy, not observed arrivals.",
+  "promotion": {
+    "approved": true,
+    "candidate_trip_weighted_mae": 1.7706533085938923,
+    "confidence_interval_95": [
+      -0.5667218737741677,
+      -0.41768489882066867
+    ],
+    "mae_difference": -0.4930071938934677,
+    "persistence_trip_weighted_mae": 2.26366050248736,
+    "reasons": [],
+    "route_regressions": {
+      "R5": -0.2205904169292821
+    }
+  },
+  "selected_model": "ridge-alpha-1",
+  "source_report": "data/evidence-2026-10-22/reports/evaluation.json (local, Git-ignored)",
+  "split_dates": {
+    "test": [
+      "2026-11-15",
+      "2026-11-16",
+      "2026-11-17",
+      "2026-11-18",
+      "2026-11-19",
+      "2026-11-20",
+      "2026-11-21"
+    ],
+    "train": [
+      "2026-10-23",
+      "2026-10-24",
+      "2026-10-25",
+      "2026-10-26",
+      "2026-10-27",
+      "2026-10-28",
+      "2026-10-29",
+      "2026-10-30",
+      "2026-10-31",
+      "2026-11-01",
+      "2026-11-02",
+      "2026-11-03",
+      "2026-11-04",
+      "2026-11-05",
+      "2026-11-06",
+      "2026-11-07"
+    ],
+    "validation": [
+      "2026-11-08",
+      "2026-11-09",
+      "2026-11-10",
+      "2026-11-11",
+      "2026-11-12",
+      "2026-11-13",
+      "2026-11-14"
+    ]
+  },
+  "test_results": {
+    "historical": {
+      "bias": 0.1008831290432414,
+      "count": 3916,
+      "mae": 2.477577034388832,
+      "median_absolute_error": 1.4000000000000001,
+      "p90_absolute_error": 5.3
+    },
+    "persistence": {
+      "bias": -0.3166283622744297,
+      "count": 3916,
+      "mae": 2.3714376915219613,
+      "median_absolute_error": 1.6333333333333333,
+      "p90_absolute_error": 5.533333333333333
+    },
+    "ridge-alpha-1": {
+      "bias": 0.21230721670683977,
+      "count": 3916,
+      "mae": 1.8483212624273175,
+      "median_absolute_error": 1.3755053467056253,
+      "p90_absolute_error": 3.7509792685293846
+    }
+  }
+}

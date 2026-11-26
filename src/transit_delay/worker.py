@@ -26,7 +26,7 @@ from transit_delay.monitoring.delayed import join_delayed_labels
 from transit_delay.monitoring.feasibility import feasibility_gates
 from transit_delay.monitoring.report import collection_report, prediction_report, write_report
 from transit_delay.pipeline import ProcessingStats, process_manifest_with_registry
-from transit_delay.runtime import write_state
+from transit_delay.runtime import read_state, write_state
 
 
 def registry_for(settings: Settings) -> StaticFeedRegistry:
@@ -56,6 +56,20 @@ def refresh_static(settings: Settings) -> Path:
     profile = settings.data_dir / "processed" / "static" / catalog.version / "profile.json"
     catalog.write_profile(profile)
     return archive
+
+
+def next_static_refresh(settings: Settings, monotonic_now: float) -> float:
+    """Honor the configured interval from the latest retained Static feed retrieval."""
+    records = registry_for(settings).records()
+    if not records:
+        return monotonic_now
+    latest = max(records, key=lambda record: record.retrieved_at)
+    retrieved_at = datetime.fromisoformat(latest.retrieved_at)
+    if retrieved_at.tzinfo is None:
+        retrieved_at = retrieved_at.replace(tzinfo=UTC)
+    age = max(0.0, (datetime.now(UTC) - retrieved_at.astimezone(UTC)).total_seconds())
+    remaining = max(0.0, settings.static_refresh_interval_seconds - age)
+    return monotonic_now + remaining
 
 
 def _manifests(settings: Settings, recent: bool = False) -> list[Path]:
@@ -349,16 +363,51 @@ class Worker:
     def run_forever(self) -> None:
         signal.signal(signal.SIGTERM, self.stop)
         signal.signal(signal.SIGINT, self.stop)
-        next_serving = next_reports = next_offline = next_static = 0.0
-        last_offline_day: date | None = None
+        now_monotonic = time.monotonic()
+        next_serving = next_reports = 0.0
+        next_static = next_static_refresh(self.settings, time.monotonic())
         timezone = ZoneInfo(self.settings.timezone)
+        state = read_state(self.state_path) or {}
+        last_offline_day: date | None = None
+        next_offline = 0.0
+        last_offline_at = state.get("last_offline_rebuild_at")
+        if isinstance(last_offline_at, str):
+            try:
+                completed_at = datetime.fromisoformat(last_offline_at)
+                if completed_at.tzinfo is None:
+                    completed_at = completed_at.replace(tzinfo=UTC)
+                last_offline_day = completed_at.astimezone(timezone).date()
+                elapsed = max(
+                    0.0, (datetime.now(UTC) - completed_at.astimezone(UTC)).total_seconds()
+                )
+                next_offline = now_monotonic + max(
+                    0.0, self.settings.offline_rebuild_interval_seconds - elapsed
+                )
+            except ValueError:
+                pass
         while self.running:
             now = time.monotonic()
             local_day = datetime.now(UTC).astimezone(timezone).date()
             try:
                 if now >= next_static:
-                    refresh_static(self.settings)
-                    next_static = now + self.settings.static_refresh_interval_seconds
+                    try:
+                        refresh_static(self.settings)
+                    except Exception as exc:
+                        write_state(
+                            self.state_path,
+                            static_refresh_status="using_retained_feed",
+                            last_static_refresh_error=f"{type(exc).__name__}: {exc}",
+                            last_static_refresh_attempt_at=datetime.now(UTC).isoformat(),
+                        )
+                    else:
+                        write_state(
+                            self.state_path,
+                            static_refresh_status="healthy",
+                            last_static_refresh_error=None,
+                            last_static_refresh_at=datetime.now(UTC).isoformat(),
+                        )
+                    finally:
+                        next_static = now + self.settings.static_refresh_interval_seconds
                 if now >= next_serving:
                     path, stats = build_features(self.settings, recent=True)
                     write_state(

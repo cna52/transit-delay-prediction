@@ -109,6 +109,7 @@ def create_app(settings: Settings, snapshot_path: Path | None = None) -> Any:
                         "status_code": status_code,
                         "latency_ms": round((time.perf_counter() - started) * 1000, 3),
                         "data_mode": settings.data_mode,
+                        "route": getattr(request.state, "route", None),
                     }
                 )
 
@@ -155,18 +156,19 @@ def create_app(settings: Settings, snapshot_path: Path | None = None) -> Any:
         return _observation(dict(row), settings.data_mode)
 
     @app.post("/v1/predictions")
-    def predict(request: PredictionRequest) -> dict[str, object]:
+    def predict(payload: PredictionRequest, request: Request) -> dict[str, object]:
         row = snapshots.find(
-            request.trip_id,
-            request.service_date.isoformat(),
-            request.start_time,
-            request.target_stop_id,
-            request.as_of,
+            payload.trip_id,
+            payload.service_date.isoformat(),
+            payload.start_time,
+            payload.target_stop_id,
+            payload.as_of,
         )
         if row is None:
             raise HTTPException(
                 status_code=404, detail="supported point-in-time observation not found"
             )
+        request.state.route = row.get("route_short_name")
         reference_now = (
             datetime.fromisoformat(str(row["as_of"]))
             if settings.data_mode in {"replay", "synthetic"}
@@ -179,6 +181,7 @@ def create_app(settings: Settings, snapshot_path: Path | None = None) -> Any:
             "example_id": row["example_id"],
             "trip_instance": row["key"],
             "target_stop_id": row["target_stop_id"],
+            "route": row.get("route_short_name"),
             "data_mode": settings.data_mode,
             **asdict(result),
         }

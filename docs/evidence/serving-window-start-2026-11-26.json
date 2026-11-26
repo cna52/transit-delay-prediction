@@ -1,0 +1,57 @@
+{
+  "window": {
+    "status": "in_progress",
+    "start_at": "2026-11-26T01:00:27.610372+00:00",
+    "end_at": "2026-12-03T01:00:27.610372+00:00",
+    "timezone": "UTC",
+    "start_basis": "first successful post-evaluation live prediction"
+  },
+  "api_check_at": "2026-11-26T01:00:53+00:00",
+  "api": {
+    "healthz": "ok",
+    "readyz": "ready",
+    "model_loaded": true,
+    "model_version": "model-911a62d1e48c",
+    "training_dataset": "ds-a8cd233959b0",
+    "supported_routes": [
+      "R5"
+    ]
+  },
+  "first_live_prediction": {
+    "predicted_at": "2026-11-26T01:00:27.610372+00:00",
+    "model_version": "model-911a62d1e48c",
+    "route": "R5",
+    "quality": "normal",
+    "freshness_seconds": 186
+  },
+  "services": {
+    "collector": "running; Trip Update and Vehicle Position requests returned HTTP 200 at 2026-11-26T00:57:20Z",
+    "worker": "running; last serving refresh reported healthy at 2026-11-26T01:00:00Z",
+    "probe_interval_seconds": 900
+  },
+  "note": "Startup evidence only. Seven complete monitored days and delayed-label results are not yet available.",
+  "initial_monitoring_snapshot": {
+    "observed_at": "2026-11-26T01:01:35+00:00",
+    "requests": 1,
+    "request_errors": 0,
+    "predictions": 1,
+    "model_versions": {
+      "model-911a62d1e48c": 1
+    },
+    "fallbacks": 0,
+    "freshness_seconds": {
+      "p50": 186.0,
+      "p95": 186.0
+    },
+    "latency_ms": {
+      "p50": 33.933,
+      "p95": 33.933
+    },
+    "matured_labels": 0,
+    "missing_or_pending_labels": 1,
+    "censored_labels": 0,
+    "mae_minutes": null,
+    "bias_minutes": null,
+    "source_report": "data/evidence-2026-10-22/reports/predictions-20261126T010027+0000-20261203T010027+0000.json (local, Git-ignored)"
+  }
+}
